@@ -58,31 +58,49 @@
   li .c small { display: block; color: var(--doux); font-variant-numeric: tabular-nums; }
   li .g { flex: none; font-weight: 600; }
   li.envoi { opacity: .6; }
-  .aide { color: var(--doux); font-size: 13px; margin-top: 8px; }
+  .aide { color: var(--doux); font-size: 13px; margin-top: 8px; overflow-wrap: anywhere; }
+  .modes { display: grid; gap: 10px; margin-top: 18px; }
+  .mode { text-align: left; padding: 16px; }
+  .mode b { display: block; font-size: 17px; }
+  .mode span { display: block; color: var(--doux); font-size: 14px; margin-top: 2px; }
+  .retour { width: 100%; margin-top: 10px; }
 </style>
 </head>
 <body>
 
-<section id="ecran-depart">
-  <h1>Scan des ventes d'un live</h1>
+<section id="ecran-menu">
+  <h1>Scan cartes gradées</h1>
   <label for="code">Code d'accès</label>
   <input id="code" type="password" inputmode="numeric" autocomplete="off">
-  <label for="chaine">Chaîne</label>
-  <select id="chaine">
-    <option>MAIN</option><option>BIS</option><option>OSMO</option><option>PROTECH</option>
-  </select>
-  <label for="date">Date du live</label>
-  <input id="date" type="date">
-  <label for="precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
+  <div class="modes">
+    <button class="mode" data-mode="renta"><b>Rentabilité</b><span>Scanner les cartes vendues après un live</span></button>
+    <button class="mode" data-mode="listing"><b>Listing</b><span>Scanner les cartes d'un stream et sortir le CSV Whatnot</span></button>
+    <button class="mode" data-mode="stock"><b>Inventaire</b><span>Faire entrer des cartes en stock</span></button>
+  </div>
+  <p class="aide" id="msg-menu"></p>
+</section>
+
+<section id="ecran-depart" hidden>
+  <h1 id="titre-depart"></h1>
+  <div id="champs-live">
+    <label for="chaine">Chaîne</label>
+    <select id="chaine">
+      <option>MAIN</option><option>BIS</option><option>OSMO</option><option>PROTECH</option>
+    </select>
+    <label for="date" id="lib-date">Date du live</label>
+    <input id="date" type="date">
+  </div>
+  <label for="precision" id="lib-precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
   <input id="precision" type="text" autocomplete="off">
   <button class="principal" id="commencer">Commencer à scanner</button>
+  <button class="retour" id="retour-menu">Retour</button>
   <p class="aide" id="msg-depart"></p>
 </section>
 
 <section id="ecran-scan" hidden>
   <div class="entete">
     <b id="nom-live"></b>
-    <span class="compteur"><strong id="total">0</strong> carte(s)</span>
+    <span class="compteur"><strong id="total">0</strong> <span id="unite">carte(s)</span></span>
   </div>
   <div id="lecteur">
     <video id="video" playsinline muted autoplay></video>
@@ -95,8 +113,10 @@
     <button id="btn-photo">Prendre une photo</button>
     <button id="btn-saisie">Taper le numéro</button>
     <button id="btn-annuler">Annuler le dernier</button>
-    <button id="btn-changer">Changer de live</button>
+    <button id="btn-changer">Terminer</button>
   </div>
+  <button class="principal" id="btn-csv" hidden>Télécharger le CSV Whatnot</button>
+  <p class="aide" id="msg-csv"></p>
   <input id="fichier" type="file" accept="image/*" capture="environment" hidden>
   <div id="saisie" hidden>
     <select id="saisie-grad"><option value="CA">CA</option><option value="PCA">PCA</option></select>
@@ -110,17 +130,21 @@
 <script>
 (function () {
   var API = 'https://script.google.com/macros/s/AKfycbxbnc8tY2wrOsmH5IAmXWQvmsiZNlMN0fhgiwbUZ52pnTXY4gOPIdgNjgGz5NpR6U15/exec';
-  var API_CA = 'https://population-api.collectaura.com/api/public/pop/';
 
   var $ = function (id) { return document.getElementById(id); };
-  var session = { code: '', live: '' };
+  var session = { code: '', live: '', mode: 'renta' };
+  var compteur = 0;      // nombre renvoyé par le Sheet (cartes de la session, ou cartes en stock)
+  var MODES = {
+    renta: { titre: 'Rentabilité', unite: 'vendue(s)', date: 'Date du live' },
+    listing: { titre: 'Listing', unite: 'listée(s)', date: 'Date du stream' },
+    stock: { titre: 'Inventaire', unite: 'en stock', date: '' }
+  };
   var lignes = [];       // cartes du live, la plus récente en premier
   var vus = {};          // "Gradateur certificat" déjà scanné sur ce live
   var file = [];         // scans pas encore enregistrés dans le Sheet, dans l'ordre
   var enCours = false;
   var dernierTexte = '', dernierInstant = 0;
   var flux = null, piste = null, lampeAllumee = false, verrouEcran = null;
-  var caDirect = true;   // passe à false si le téléphone ne peut pas interroger CollectAura lui-même
   var toile = document.createElement('canvas');
   var TAILLES = [480, 640, 400, 800], tour = 0;
   var detecteur = null;
@@ -134,31 +158,11 @@
     return fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ fn: fonction, req: donnees }),
+      body: JSON.stringify({ fn: fonction, req: Object.assign(
+        { code: session.code, live: session.live, mode: session.mode }, donnees || {}) }),
       redirect: 'follow'
     }).then(function (r) { return r.json(); })
       .then(function (j) { if (!j.ok) throw new Error(j.error); return j.data; });
-  }
-
-  // ---- CollectAura interrogé directement par le téléphone (rapide) ----
-  function chercherCA(cert) {
-    if (!caDirect) return Promise.resolve(null);
-    var ctl = ('AbortController' in window) ? new AbortController() : null;
-    var minuterie = setTimeout(function () { if (ctl) ctl.abort(); }, 2500);
-    return fetch(API_CA + encodeURIComponent(cert), ctl ? { signal: ctl.signal } : {})
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (!d || !d.card) return null;
-        return {
-          carte: d.card.card_name || d.card.name || '',
-          numero: d.card.number || '',
-          extension: d.card.expansion || '',
-          langue: String(d.card.language || '').toUpperCase(),
-          note: String(d.grade || '').replace('.', ',')
-        };
-      })
-      .catch(function (e) { if (e && e.name === 'TypeError') caDirect = false; return null; })
-      .then(function (info) { clearTimeout(minuterie); return info; });
   }
 
   // ---- retours sonores et visuels ----
@@ -199,7 +203,7 @@
       li.appendChild(n); li.appendChild(c); li.appendChild(g);
       liste.appendChild(li);
     });
-    $('total').textContent = lignes.length;
+    $('total').textContent = compteur + file.length;
     var attente = file.length;
     $('envoi').textContent = attente ? attente + ' carte(s) en cours d\'enregistrement…' : '';
   }
@@ -251,18 +255,7 @@
       return;
     }
     etat('', 'CollectAura n° ' + a.cert, 'Recherche de la carte…');
-    chercherCA(a.cert).then(function (info) {
-      if (info) {
-        scan.info = info;
-        ligne.carte = info.carte; ligne.numero = info.numero; ligne.note = info.note;
-        if (lignes[0] === ligne) {
-          etat('ok', (info.carte + ' ' + info.numero).trim(),
-            'CA ' + info.note + (info.extension ? ' · ' + info.extension : '') + ' · certificat ' + a.cert);
-        }
-        afficherListe();
-      }
-      scan.pret = true; vider();
-    });
+    scan.pret = true; vider();
   }
 
   // ---- enregistrement dans le Sheet, par paquets, dans l'ordre des scans ----
@@ -273,9 +266,10 @@
     if (!lot.length) return;
     enCours = true;
     appeler('enregistrerLot', {
-      code: session.code, live: session.live,
-      scans: lot.map(function (s) { return { texte: s.texte, info: s.info }; })
-    }).then(function (res) {
+      scans: lot.map(function (s) { return { texte: s.texte }; })
+    }).then(function (rep) {
+      var res = rep.resultats || [];
+      compteur = rep.compteur;
       file.splice(0, lot.length);
       lot.forEach(function (s, i) {
         var r = res[i] || {}, l = s.ligne;
@@ -292,7 +286,8 @@
           lignes = lignes.filter(function (x) { return x !== l; });
           if (r.raison === 'doublon') {
             bip(300, 0.25);
-            etat('alerte', 'Déjà scannée (n° ' + r.num + ')', (r.carte ? r.carte + ' · ' : '') + 'certificat ' + l.cert);
+            etat('alerte', r.etat ? 'Déjà ' + r.etat : 'Déjà scannée (n° ' + r.num + ')',
+              (r.carte ? r.carte + ' · ' : '') + 'certificat ' + l.cert);
           } else {
             delete vus[l.cle];
             etat('erreur', 'QR code non reconnu', '');
@@ -306,7 +301,7 @@
       enCours = false;
       var msg = String(e && e.message || e);
       if (msg.indexOf('CODE_INVALIDE') >= 0) {
-        etat('erreur', 'Code d\'accès incorrect', 'Rien n\'est enregistré. Reviens à « Changer de live ».');
+        etat('erreur', 'Code d\'accès incorrect', 'Rien n\'est enregistré. Touche « Terminer » et retape le code.');
         return;
       }
       $('envoi').textContent = file.length + ' carte(s) pas encore enregistrée(s), nouvel essai… (' + msg + ')';
@@ -433,44 +428,98 @@
   })();
 
   function chargerLive() {
-    return appeler('listeLive', { code: session.code, live: session.live }).then(function (recues) {
-      vus = {}; lignes = [];
-      recues.forEach(function (r) {
-        var cle = r.gradateur + ' ' + r.cert;
-        vus[cle] = true;
-        lignes.unshift({ cle: cle, gradateur: r.gradateur, cert: r.cert, carte: r.carte, numero: r.numero,
-          note: r.note, envoi: false, num: r.num });
+    return appeler('charger').then(function (r) {
+      vus = {}; lignes = []; dernierTexte = '';
+      compteur = r.compteur;
+      r.lignes.forEach(function (x) {
+        var cle = x.gradateur + ' ' + x.cert;
+        // en stock, c'est le Sheet qui répond « déjà en stock » ou « déjà vendue sur … »
+        if (session.mode !== 'stock') vus[cle] = true;
+        lignes.unshift({ cle: cle, gradateur: x.gradateur, cert: x.cert, carte: x.carte, numero: x.numero,
+          note: x.note, envoi: false, num: x.num });
       });
       afficherListe();
     });
   }
 
+  // ---- menu des trois modes ----
+  Array.prototype.forEach.call(document.querySelectorAll('.mode'), function (b) {
+    b.onclick = function () {
+      var code = $('code').value.trim();
+      if (!code) { $('msg-menu').textContent = 'Tape d\'abord le code d\'accès.'; return; }
+      var m = b.dataset.mode;
+      session.code = code; session.mode = m;
+      $('msg-menu').textContent = '';
+      $('titre-depart').textContent = MODES[m].titre;
+      $('champs-live').hidden = (m === 'stock');
+      $('lib-date').textContent = MODES[m].date;
+      $('lib-precision').textContent = m === 'stock'
+        ? 'Lot (facultatif, ex. Retour PCA boîte 12)'
+        : 'Précision (facultatif, ex. 17h ou GRADEE JAP)';
+      $('precision').value = '';
+      $('msg-depart').textContent = '';
+      $('ecran-menu').hidden = true; $('ecran-depart').hidden = false;
+    };
+  });
+  $('retour-menu').onclick = function () { $('ecran-depart').hidden = true; $('ecran-menu').hidden = false; };
+
   $('commencer').onclick = function () {
-    var code = $('code').value.trim(), date = $('date').value;
-    if (!code || !date) { $('msg-depart').textContent = 'Il manque le code ou la date.'; return; }
-    var p = date.split('-');
-    var live = $('chaine').value + ' ' + p[2] + '/' + p[1] + '/' + p[0] +
-      ($('precision').value.trim() ? ' ' + $('precision').value.trim() : '');
+    var m = session.mode, date = $('date').value, precision = $('precision').value.trim(), live;
+    if (m === 'stock') {
+      live = 'STOCK' + (precision ? ' ' + precision : '');
+    } else {
+      if (!date) { $('msg-depart').textContent = 'Il manque la date.'; return; }
+      var p = date.split('-');
+      live = $('chaine').value + ' ' + p[2] + '/' + p[1] + '/' + p[0] + (precision ? ' ' + precision : '');
+    }
     $('commencer').disabled = true;
     $('msg-depart').textContent = 'Connexion…';
-    session.code = code; session.live = live;
+    session.live = live;
     chargerLive().then(function () {
-      ecrire('svl-code', code); ecrire('svl-chaine', $('chaine').value);
-      $('nom-live').textContent = live;
+      ecrire('svl-code', session.code); ecrire('svl-chaine', $('chaine').value);
+      $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock' ? (precision || 'stock') : live);
+      $('unite').textContent = MODES[m].unite;
+      $('btn-csv').hidden = (m !== 'listing'); $('msg-csv').textContent = '';
       $('ecran-depart').hidden = true; $('ecran-scan').hidden = false;
       $('lecteur').hidden = false;
       etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
       demarrerCamera();
     }).catch(function (e) {
       var msg = String(e && e.message || e);
-      $('msg-depart').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect.' : msg;
+      $('msg-depart').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect. Reviens au menu pour le corriger.' : msg;
     }).then(function () { $('commencer').disabled = false; });
+  };
+
+  // ---- Listing : fichier d'import Whatnot ----
+  $('btn-csv').onclick = function () {
+    var b = this;
+    if (file.length) { $('msg-csv').textContent = 'Attends la fin de l\'enregistrement.'; return; }
+    b.disabled = true; $('msg-csv').textContent = 'Préparation du fichier…';
+    appeler('csvListing').then(function (r) {
+      var bilan = r.incluses + ' carte(s) dans le fichier sur ' + r.scannees + ' scannée(s).';
+      if (r.sansNom) bilan += ' ' + r.sansNom + ' carte(s) sans nom non incluse(s) (PCA en attente de l\'API).';
+      if (r.sansImage.length) bilan += ' Sans image dans INVENTAIRE : ' + r.sansImage.join(' ; ') + '.';
+      if (r.erreurInventaire) bilan += ' INVENTAIRE illisible (' + r.erreurInventaire + ') : aucune image.';
+      $('msg-csv').textContent = bilan;
+      if (!r.incluses) return;
+      var blob = new Blob([r.csv], { type: 'text/csv;charset=utf-8' });
+      var fichier = null;
+      try { fichier = new File([blob], r.nom, { type: 'text/csv' }); } catch (e) {}
+      var mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (mobile && fichier && navigator.canShare && navigator.canShare({ files: [fichier] })) {
+        return navigator.share({ files: [fichier], title: r.nom }).catch(function () {});
+      }
+      var lien = document.createElement('a');
+      lien.href = URL.createObjectURL(blob); lien.download = r.nom;
+      document.body.appendChild(lien); lien.click(); lien.remove();
+    }).catch(function (e) { $('msg-csv').textContent = 'Fichier impossible : ' + String(e && e.message || e); })
+      .then(function () { b.disabled = false; });
   };
 
   $('btn-changer').onclick = function () {
     if (file.length) { etat('alerte', 'Attends la fin de l\'enregistrement', file.length + ' carte(s) en cours.'); return; }
     arreterCamera();
-    $('ecran-scan').hidden = true; $('ecran-depart').hidden = false; $('msg-depart').textContent = '';
+    $('ecran-scan').hidden = true; $('ecran-menu').hidden = false;
   };
 
   $('btn-photo').onclick = function () { $('fichier').click(); };
@@ -504,7 +553,7 @@
       return;
     }
     b.dataset.confirme = ''; b.textContent = 'Annuler le dernier'; b.disabled = true;
-    appeler('annulerDernier', { code: session.code, live: session.live }).then(function (r) {
+    appeler('annulerDernier').then(function (r) {
       if (!r.ok) { etat('alerte', 'Rien à annuler', ''); return; }
       dernierTexte = '';
       return chargerLive().then(function () { etat('', 'Dernier scan supprimé', 'Certificat ' + r.cert); });
