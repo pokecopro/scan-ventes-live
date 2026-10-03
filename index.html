@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Scan ventes live</title>
+<style>
+  :root {
+    --fond: #10151c; --carte: #1a222d; --trait: #2b3644; --texte: #eef2f6; --doux: #93a1b3;
+    --ok: #37c98b; --alerte: #f2b33d; --erreur: #ef6b62; --accent: #4f9cf5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fond); color: var(--texte);
+    font: 16px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 12px 16px 32px; max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 4px 0 12px; }
+  label { display: block; font-size: 13px; color: var(--doux); margin: 12px 0 4px; }
+  input, select, button { font: inherit; color: inherit; }
+  input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--trait);
+    background: var(--carte); }
+  button { border: 0; border-radius: 10px; padding: 12px 14px; background: var(--carte);
+    border: 1px solid var(--trait); }
+  button.principal { background: var(--accent); border-color: var(--accent); color: #fff;
+    font-weight: 600; width: 100%; margin-top: 18px; padding: 14px; }
+  button:disabled { opacity: .5; }
+  [hidden] { display: none !important; }
+  .entete { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .entete b { font-size: 15px; }
+  .compteur { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--doux); }
+  .compteur strong { color: var(--texte); font-size: 22px; }
+  #lecteur { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 220px; }
+  #lecteur video { display: block; }
+  #etat { border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: var(--carte);
+    border-left: 6px solid var(--trait); min-height: 76px; }
+  #etat.ok { border-left-color: var(--ok); }
+  #etat.alerte { border-left-color: var(--alerte); }
+  #etat.erreur { border-left-color: var(--erreur); }
+  #etat .t { font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
+  #etat .s { color: var(--doux); font-size: 14px; overflow-wrap: anywhere; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actions button { font-size: 14px; }
+  #saisie { display: flex; gap: 8px; margin-top: 8px; }
+  #saisie select { width: 96px; flex: none; }
+  #saisie button { flex: none; }
+  ul { list-style: none; padding: 0; margin: 14px 0 0; }
+  li { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--trait); font-size: 14px; }
+  li .n { color: var(--doux); width: 30px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+  li .c { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  li .g { flex: none; font-weight: 600; }
+  li.attente .c { color: var(--doux); }
+  .aide { color: var(--doux); font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<section id="ecran-depart">
+  <h1>Scan des ventes d'un live</h1>
+  <label for="code">Code d'accès</label>
+  <input id="code" type="password" inputmode="numeric" autocomplete="off">
+  <label for="chaine">Chaîne</label>
+  <select id="chaine">
+    <option>MAIN</option><option>BIS</option><option>OSMO</option><option>PROTECH</option>
+  </select>
+  <label for="date">Date du live</label>
+  <input id="date" type="date">
+  <label for="precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
+  <input id="precision" type="text" autocomplete="off">
+  <button class="principal" id="commencer">Commencer à scanner</button>
+  <p class="aide" id="msg-depart"></p>
+</section>
+
+<section id="ecran-scan" hidden>
+  <div class="entete">
+    <b id="nom-live"></b>
+    <span class="compteur"><strong id="total">0</strong> carte(s)</span>
+  </div>
+  <div id="lecteur"></div>
+  <div id="etat"><div class="t">Vise le QR code d'un boîtier</div><div class="s">La carte s'enregistre toute seule.</div></div>
+  <div class="actions">
+    <button id="btn-photo">Prendre une photo</button>
+    <button id="btn-saisie">Taper le numéro</button>
+    <button id="btn-annuler">Annuler le dernier</button>
+    <button id="btn-changer">Changer de live</button>
+  </div>
+  <input id="fichier" type="file" accept="image/*" capture="environment" hidden>
+  <div id="saisie" hidden>
+    <select id="saisie-grad"><option value="CA">CA</option><option value="PCA">PCA</option></select>
+    <input id="saisie-num" type="text" inputmode="numeric" placeholder="N° de certificat">
+    <button id="saisie-ok">OK</button>
+  </div>
+  <ul id="liste"></ul>
+</section>
+
+<div id="lecteur-fichier" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var session = { code: '', live: '' };
+  var vus = {};          // certificats déjà scannés sur ce live
+  var file = [];         // scans en attente d'envoi
+  var enCours = false;
+  var dernierTexte = '', dernierInstant = 0;
+  var camera = null;
+
+  // ---- petit stockage local (confort seulement) ----
+  function lire(cle) { try { return localStorage.getItem(cle) || ''; } catch (e) { return ''; } }
+  function ecrire(cle, v) { try { localStorage.setItem(cle, v); } catch (e) {} }
+
+  // ---- appel au script Google ----
+  var API = 'https://script.google.com/macros/s/AKfycbxbnc8tY2wrOsmH5IAmXWQvmsiZNlMN0fhgiwbUZ52pnTXY4gOPIdgNjgGz5NpR6U15/exec';
+  function appeler(fonction, donnees) {
+    return fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fonction, req: donnees }),
+      redirect: 'follow'
+    }).then(function (r) { return r.json(); })
+      .then(function (j) { if (!j.ok) throw new Error(j.error); return j.data; });
+  }
+
+  // ---- retours sonores et visuels ----
+  var audio = null;
+  function bip(freq, duree) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      var o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = freq; g.gain.value = 0.15;
+      o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + duree);
+    } catch (e) {}
+    try { if (navigator.vibrate) navigator.vibrate(freq > 600 ? 60 : [80, 60, 80]); } catch (e) {}
+  }
+  function etat(type, titre, sous) {
+    var e = $('etat');
+    e.className = type;
+    e.innerHTML = '';
+    var t = document.createElement('div'); t.className = 't'; t.textContent = titre;
+    var s = document.createElement('div'); s.className = 's'; s.textContent = sous || '';
+    e.appendChild(t); e.appendChild(s);
+  }
+
+  // ---- reconnaissance du QR code ----
+  function cleCarte(texte) {
+    var m = String(texte).match(/collectaura\.com.*[?&]serialnumber=(\d+)/i);
+    if (m) return 'CollectAura ' + m[1];
+    m = String(texte).match(/pcagrade\.com\/verif\/(\d+)/i);
+    if (m) return 'PCA ' + m[1];
+    m = String(texte).match(/^(CA|PCA)\s*(\d{5,})$/i);
+    if (m) return (m[1].toUpperCase() === 'CA' ? 'CollectAura ' : 'PCA ') + m[2];
+    return null;
+  }
+
+  function recu(texte) {
+    var maintenant = Date.now();
+    if (texte === dernierTexte && maintenant - dernierInstant < 2500) return;
+    dernierTexte = texte; dernierInstant = maintenant;
+    var cle = cleCarte(texte);
+    if (!cle) {
+      bip(300, 0.25);
+      etat('erreur', 'QR code non reconnu', 'Ce n\'est ni un boîtier PCA ni un CollectAura.');
+      return;
+    }
+    if (vus[cle]) {
+      bip(300, 0.25);
+      etat('alerte', 'Déjà scannée', cle);
+      return;
+    }
+    vus[cle] = true;
+    bip(900, 0.08);
+    etat('', 'Enregistrement…', cle);
+    file.push({ texte: texte, cle: cle });
+    vider();
+  }
+
+  function vider() {
+    if (enCours || !file.length) return;
+    enCours = true;
+    var scan = file.shift();
+    appeler('enregistrerScan', { code: session.code, live: session.live, texte: scan.texte })
+      .then(function (r) {
+        if (r.ok) {
+          ajouterLigne(r, true);
+          if (r.trouve) {
+            etat(r.ailleurs ? 'alerte' : 'ok',
+              (r.carte + ' ' + r.numero).trim(),
+              (r.gradateur === 'CollectAura' ? 'CA ' : 'PCA ') + r.note +
+              (r.extension ? ' · ' + r.extension : '') +
+              (r.ailleurs ? ' · déjà scannée sur ' + r.ailleurs : ''));
+          } else {
+            etat('alerte', r.gradateur + ' n° ' + r.cert, r.statut);
+          }
+        } else if (r.raison === 'doublon') {
+          bip(300, 0.25);
+          etat('alerte', 'Déjà scannée (n° ' + r.num + ')', (r.carte || r.cert));
+        } else {
+          delete vus[scan.cle];
+          bip(300, 0.25);
+          etat('erreur', 'QR code non reconnu', r.texte || '');
+        }
+      })
+      .catch(function (e) {
+        delete vus[scan.cle];
+        bip(300, 0.4);
+        var msg = String(e && e.message || e);
+        etat('erreur', 'Non enregistrée, rescanne-la',
+          msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect.' : msg);
+      })
+      .then(function () { enCours = false; vider(); });
+  }
+
+  function ajouterLigne(r, enTete) {
+    var li = document.createElement('li');
+    if (!r.trouve) li.className = 'attente';
+    var n = document.createElement('span'); n.className = 'n'; n.textContent = r.num;
+    var c = document.createElement('span'); c.className = 'c';
+    c.textContent = r.trouve ? (r.carte + ' ' + r.numero).trim() : (r.gradateur + ' n° ' + r.cert);
+    var g = document.createElement('span'); g.className = 'g';
+    g.textContent = (r.gradateur === 'CollectAura' ? 'CA' : 'PCA') + (r.note ? ' ' + r.note : '');
+    li.appendChild(n); li.appendChild(c); li.appendChild(g);
+    var liste = $('liste');
+    if (enTete && liste.firstChild) liste.insertBefore(li, liste.firstChild); else liste.appendChild(li);
+    $('total').textContent = liste.children.length;
+  }
+
+  // ---- caméra ----
+  function demarrerCamera() {
+    if (typeof Html5Qrcode === 'undefined') {
+      etat('erreur', 'Lecteur QR non chargé', 'Vérifie la connexion puis recharge la page.');
+      return;
+    }
+    camera = new Html5Qrcode('lecteur', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
+    camera.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: function (w, h) { var c = Math.floor(Math.min(w, h) * 0.75); return { width: c, height: c }; } },
+      recu, function () {}
+    ).catch(function (e) {
+      camera = null;
+      $('lecteur').hidden = true;
+      etat('alerte', 'Caméra en direct indisponible',
+        'Utilise « Prendre une photo ». Détail : ' + String(e && (e.name || e.message) || e));
+    });
+  }
+  function arreterCamera() {
+    if (!camera) return Promise.resolve();
+    var c = camera; camera = null;
+    return c.stop().catch(function () {});
+  }
+
+  // ---- lecture d'une photo : photo entière, puis zones agrandies (QR petit dans l'image) ----
+  function lirePhoto(fichier) {
+    var lecteur = new Html5Qrcode('lecteur-fichier', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
+    return lecteur.scanFile(fichier, false).catch(function () {
+      return chargerImage(fichier).then(function (img) {
+        var zones = [];
+        [2, 3].forEach(function (n) {           // grilles 2x2 puis 3x3, zones qui se chevauchent
+          var pas = 1 / (n + 1), taille = 2 * pas;
+          for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) zones.push([x * pas, y * pas, taille]);
+        });
+        var i = 0;
+        function suivante() {
+          if (i >= zones.length) return Promise.reject(new Error('aucun QR'));
+          var z = zones[i++];
+          return decouper(img, z[0], z[1], z[2]).then(function (bout) {
+            return lecteur.scanFile(bout, false);
+          }).catch(suivante);
+        }
+        return suivante();
+      });
+    });
+  }
+  function chargerImage(fichier) {
+    return new Promise(function (ok, ko) {
+      var url = URL.createObjectURL(fichier), img = new Image();
+      img.onload = function () { ok(img); };
+      img.onerror = ko;
+      img.src = url;
+    });
+  }
+  function decouper(img, fx, fy, ft) {
+    return new Promise(function (ok) {
+      var sx = img.naturalWidth * fx, sy = img.naturalHeight * fy;
+      var sw = img.naturalWidth * ft, sh = img.naturalHeight * ft;
+      var k = Math.min(3, 1400 / Math.max(sw, sh));
+      var c = document.createElement('canvas');
+      c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      c.toBlob(function (b) { ok(new File([b], 'zone.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.95);
+    });
+  }
+
+  // ---- départ ----
+  $('code').value = lire('svl-code');
+  if (lire('svl-chaine')) $('chaine').value = lire('svl-chaine');
+  (function () {
+    var d = new Date(); d.setHours(d.getHours() - 6); // après minuit, on reste sur le live de la veille
+    $('date').value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  })();
+
+  $('commencer').onclick = function () {
+    var code = $('code').value.trim(), date = $('date').value;
+    if (!code || !date) { $('msg-depart').textContent = 'Il manque le code ou la date.'; return; }
+    var p = date.split('-');
+    var live = $('chaine').value + ' ' + p[2] + '/' + p[1] + '/' + p[0] +
+      ($('precision').value.trim() ? ' ' + $('precision').value.trim() : '');
+    $('commencer').disabled = true;
+    $('msg-depart').textContent = 'Connexion…';
+    appeler('listeLive', { code: code, live: live }).then(function (lignes) {
+      session.code = code; session.live = live;
+      ecrire('svl-code', code); ecrire('svl-chaine', $('chaine').value);
+      vus = {}; $('liste').innerHTML = '';
+      lignes.forEach(function (r) { vus[r.gradateur + ' ' + r.cert] = true; ajouterLigne(r, true); });
+      $('total').textContent = lignes.length;
+      $('nom-live').textContent = live;
+      $('ecran-depart').hidden = true; $('ecran-scan').hidden = false;
+      $('lecteur').hidden = false;
+      etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
+      demarrerCamera();
+    }).catch(function (e) {
+      var msg = String(e && e.message || e);
+      $('msg-depart').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect.' : msg;
+    }).then(function () { $('commencer').disabled = false; });
+  };
+
+  $('btn-changer').onclick = function () {
+    arreterCamera().then(function () {
+      $('ecran-scan').hidden = true; $('ecran-depart').hidden = false; $('msg-depart').textContent = '';
+    });
+  };
+
+  $('btn-photo').onclick = function () { $('fichier').click(); };
+  $('fichier').onchange = function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (!f) return;
+    etat('', 'Lecture de la photo…', '');
+    lirePhoto(f).then(function (texte) { dernierTexte = ''; recu(texte); })
+      .catch(function () {
+        bip(300, 0.25);
+        etat('erreur', 'Aucun QR code lisible sur la photo', 'Rapproche-toi du QR code et évite les reflets.');
+      });
+  };
+
+  $('btn-saisie').onclick = function () { $('saisie').hidden = !$('saisie').hidden; };
+  $('saisie-ok').onclick = function () {
+    var num = $('saisie-num').value.replace(/\D/g, '');
+    if (num.length < 5) return;
+    dernierTexte = '';
+    recu($('saisie-grad').value + ' ' + num);
+    $('saisie-num').value = '';
+  };
+
+  $('btn-annuler').onclick = function () {
+    var b = this;
+    if (b.dataset.confirme !== '1') {
+      b.dataset.confirme = '1'; b.textContent = 'Confirmer l\'annulation';
+      setTimeout(function () { b.dataset.confirme = ''; b.textContent = 'Annuler le dernier'; }, 4000);
+      return;
+    }
+    b.dataset.confirme = ''; b.textContent = 'Annuler le dernier'; b.disabled = true;
+    appeler('annulerDernier', { code: session.code, live: session.live }).then(function (r) {
+      if (!r.ok) { etat('alerte', 'Rien à annuler', ''); return; }
+      return appeler('listeLive', { code: session.code, live: session.live }).then(function (lignes) {
+        vus = {}; $('liste').innerHTML = ''; dernierTexte = '';
+        lignes.forEach(function (x) { vus[x.gradateur + ' ' + x.cert] = true; ajouterLigne(x, true); });
+        $('total').textContent = lignes.length;
+        etat('', 'Dernier scan supprimé', 'Certificat ' + r.cert);
+      });
+    }).catch(function (e) { etat('erreur', 'Annulation impossible', String(e && e.message || e)); })
+      .then(function () { b.disabled = false; });
+  };
+})();
+</script>
+</body>
+</html>
