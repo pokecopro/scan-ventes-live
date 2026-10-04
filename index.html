@@ -144,12 +144,15 @@
 </section>
 
 <script src="jsQR.js"></script>
+<script src="zbar.js"></script>
 <script>
 (function () {
   var API = 'https://script.google.com/macros/s/AKfycbxbnc8tY2wrOsmH5IAmXWQvmsiZNlMN0fhgiwbUZ52pnTXY4gOPIdgNjgGz5NpR6U15/exec';
 
   var $ = function (id) { return document.getElementById(id); };
   var session = { code: '', live: '', mode: 'renta' };
+  var PRIX_CADRE = 15;   // € HT, ajouté quand le code-barres d'un cadre est vu avec le QR code
+  var fenetre = null;    // carte qui vient d'être lue : pendant un court instant on cherche le code-barres d'un cadre
   var modeNR = false;    // vrai quand on scanne les ventes non réglées
   var compteur = 0;      // nombre renvoyé par le Sheet (cartes de la session, ou cartes en stock)
   var MODES = {
@@ -214,7 +217,7 @@
       var n = document.createElement('span'); n.className = 'n'; n.textContent = l.num || '…';
       var c = document.createElement('span'); c.className = 'c';
       c.textContent = l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : 'Carte à compléter';
-      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert + (l.nr ? ' · non régulé' : '');
+      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert + (l.cadre ? ' · cadre' : '') + (l.nr ? ' · non régulé' : '');
       c.appendChild(p);
       var g = document.createElement('span'); g.className = 'g';
       g.textContent = prefixe(l.gradateur) + (l.note ? ' ' + l.note : '');
@@ -222,7 +225,7 @@
       liste.appendChild(li);
     });
     var attente = file.length;
-    $('total').textContent = compteur + file.filter(function (s) { return !s.nr && !s.retablir; }).length;
+    $('total').textContent = compteur + file.filter(function (s) { return !s.nr && !s.retablir && !s.ajoutCadre; }).length;
     if (session.mode === 'renta') {
       var nbNR = lignes.filter(function (l) { return l.nr; }).length;
       $('unite').textContent = MODES.renta.unite + (nbNR ? ' · ' + nbNR + ' non régulé(s)' : '');
@@ -241,11 +244,14 @@
     return null;
   }
 
-  function recu(texte) {
+  // cadreConnu : indéfini quand le scan vient de la caméra (on cherchera le code-barres juste après),
+  // sinon la référence du cadre lue sur la photo, ou '' s'il n'y en a pas.
+  function recu(texte, cadreConnu) {
     var maintenant = Date.now();
     // tant que le même QR reste devant la caméra, on ne le signale pas à nouveau
     if (texte === dernierTexte && maintenant - dernierInstant < 2500) { dernierInstant = maintenant; return; }
     dernierTexte = texte; dernierInstant = maintenant;
+    if (fenetre) fermerFenetre('');   // une autre carte arrive : la recherche de cadre de la précédente s'arrête
     var a = analyser(texte);
     if (!a) {
       bip(300, 0.25);
@@ -271,6 +277,11 @@
       return;
     }
     if (vus[cle]) {
+      // déjà scannée sans cadre : si le code-barres du cadre est visible, on ajoute seulement le cadre
+      if (deja && !deja.cadre && !deja.envoi) {
+        if (cadreConnu) { file.push({ texte: texte, ligne: deja, cadre: cadreConnu, ajoutCadre: true, pret: true }); vider(); return; }
+        if (cadreConnu === undefined && flux) fenetre = { texte: texte, ligne: deja, fin: maintenant + 1500 };
+      }
       bip(300, 0.25);
       etat('alerte', 'Déjà scannée' + (deja && deja.num ? ' (n° ' + deja.num + ')' : ''),
         (deja && deja.carte ? deja.carte + ' · ' : '') + 'certificat ' + a.cert);
@@ -289,11 +300,67 @@
 
     if (a.gradateur === 'PCA') {
       etat('alerte', 'PCA n° ' + a.cert, 'Certificat enregistré. Carte à compléter quand PCA ouvrira son API.');
-      scan.pret = true; vider();
+      finaliser(scan, cadreConnu);
       return;
     }
     etat('', 'CollectAura n° ' + a.cert, 'Recherche de la carte…');
-    scan.pret = true; vider();
+    finaliser(scan, cadreConnu);
+  }
+
+  // Avant d'envoyer la carte, on laisse un court instant à la caméra pour voir le code-barres d'un cadre.
+  function finaliser(scan, cadreConnu) {
+    if (cadreConnu === undefined && flux) {
+      fenetre = { texte: scan.texte, scan: scan, fin: Date.now() + 1200 };
+      return;
+    }
+    scan.cadre = cadreConnu || '';
+    if (scan.cadre) scan.ligne.cadre = true;
+    scan.pret = true; afficherListe(); vider();
+  }
+  function fermerFenetre(ref) {
+    var f = fenetre; fenetre = null;
+    if (!f) return;
+    if (ref) bip(1200, 0.08);
+    if (f.scan) {
+      f.scan.cadre = ref;
+      if (ref) f.scan.ligne.cadre = true;
+      f.scan.pret = true;
+    } else if (ref && f.ligne && !f.ligne.cadre) {
+      file.push({ texte: f.texte, ligne: f.ligne, cadre: ref, ajoutCadre: true, pret: true });
+    }
+    afficherListe(); vider();
+  }
+  var barresOccupe = false;
+  function chercherCadre(v) {
+    if (!fenetre || barresOccupe) return;
+    var f = fenetre;
+    barresOccupe = true;
+    lireCodeBarres(v, v.videoWidth, v.videoHeight).then(function (ref) {
+      barresOccupe = false;
+      if (fenetre !== f) return;
+      if (ref) fermerFenetre(ref);
+      else if (Date.now() > f.fin) fermerFenetre('');
+    });
+  }
+
+  // ---- code-barres classique (Code 128) de l'étiquette d'un cadre : « PRO-PCOL-00836 » ----
+  var toileBarres = document.createElement('canvas');
+  function lireCodeBarres(source, sw, sh) {
+    if (typeof zbarWasm === 'undefined') return Promise.resolve('');
+    try {
+      var k = Math.min(1, 1100 / Math.max(sw, sh));
+      toileBarres.width = Math.round(sw * k); toileBarres.height = Math.round(sh * k);
+      var ctx = toileBarres.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(source, 0, 0, sw, sh, 0, 0, toileBarres.width, toileBarres.height);
+      return zbarWasm.scanImageData(ctx.getImageData(0, 0, toileBarres.width, toileBarres.height))
+        .then(function (codes) {
+          for (var i = 0; i < codes.length; i++) {
+            var t = codes[i].decode();
+            if (/^PRO-[A-Z0-9]+-\d+$/i.test(t)) return t.toUpperCase();
+          }
+          return '';
+        }).catch(function () { return ''; });
+    } catch (e) { return Promise.resolve(''); }
   }
 
   // ---- enregistrement dans le Sheet, par paquets, dans l'ordre des scans ----
@@ -306,7 +373,7 @@
     enCours = true;
     appeler('enregistrerLot', {
       nonRegle: nr,
-      scans: lot.map(function (s) { return { texte: s.texte }; })
+      scans: lot.map(function (s) { return { texte: s.texte, cadre: s.cadre || '' }; })
     }).then(function (rep) {
       var res = rep.resultats || [];
       compteur = rep.compteur;
@@ -331,6 +398,13 @@
           }
           return;
         }
+        if (s.ajoutCadre) {
+          if (r.cadreAjoute) {
+            l.cadre = true;
+            etat('ok', 'Cadre ajouté : + ' + PRIX_CADRE + ' € HT', (l.carte ? l.carte + ' · ' : '') + 'certificat ' + l.cert);
+          }
+          return;
+        }
         if (r.ok && r.retabli) {
           l.nr = false;
           etat('ok', 'Remise en vendue', (l.carte ? l.carte + ' · ' : '') + 'certificat ' + l.cert);
@@ -338,12 +412,13 @@
         }
         if (s.retablir) return;
         if (r.ok) {
-          l.envoi = false; l.num = r.num;
+          l.envoi = false; l.num = r.num; l.cadre = !!r.cadre;
           if (!l.carte && r.carte) { l.carte = r.carte; l.numero = r.numero; l.note = r.note; }
           if (lignes[0] === l) {
             if (r.ailleurs) etat('alerte', l.carte || (l.gradateur + ' n° ' + l.cert), 'Déjà scannée sur ' + r.ailleurs);
             else if (r.trouve && l.gradateur === 'CollectAura') etat('ok', (l.carte + ' ' + l.numero).trim(),
-              'CA ' + l.note + (r.extension ? ' · ' + r.extension : '') + ' · certificat ' + l.cert);
+              'CA ' + l.note + (r.extension ? ' · ' + r.extension : '') + ' · certificat ' + l.cert +
+              (l.cadre ? ' · cadre + ' + PRIX_CADRE + ' € HT' : ''));
             else if (!r.trouve && l.gradateur === 'CollectAura') etat('alerte', 'CollectAura n° ' + l.cert, r.statut);
           }
         } else {
@@ -403,6 +478,7 @@
       toile.getContext('2d').drawImage(v, sx, sy, c, c, 0, 0, toile.width, toile.height);
       detecteur.detect(toile).then(function (codes) {
         if (codes && codes[0] && codes[0].rawValue) recu(codes[0].rawValue);
+        chercherCadre(v);
       }).catch(function () { detecteur = null; }).then(suite);
       return;
     }
@@ -411,6 +487,7 @@
     tour = (tour + 1) % TAILLES.length;
     try { texte = decoderZone(v, sx, sy, c, c, TAILLES[tour]); } catch (e) {}
     if (texte) recu(texte);
+    chercherCadre(v);
     suite();
   }
 
@@ -447,6 +524,7 @@
   }
   function arreterCamera() {
     if (flux) flux.getTracks().forEach(function (t) { t.stop(); });
+    if (fenetre) fermerFenetre('');
     flux = null; piste = null; lampeAllumee = false;
     try { if (verrouEcran) verrouEcran.release(); } catch (e) {}
     verrouEcran = null;
@@ -474,7 +552,7 @@
           for (var t = 0; t < 3 && !texte; t++) {
             try { texte = decoderZone(img, w * z[0], h * z[1], w * z[2], h * z[3], [1400, 800, 500][t]); } catch (e) {}
           }
-          if (texte) { ok(texte); return; }
+          if (texte) { lireCodeBarres(img, w, h).then(function (cadre) { ok({ texte: texte, cadre: cadre }); }); return; }
         }
         ko(new Error('aucun QR'));
       };
@@ -500,7 +578,7 @@
         // en stock, c'est le Sheet qui répond « déjà en stock » ou « déjà vendue sur … »
         if (session.mode !== 'stock') vus[cle] = true;
         lignes.unshift({ cle: cle, gradateur: x.gradateur, cert: x.cert, carte: x.carte, numero: x.numero,
-          note: x.note, envoi: false, num: x.num, nr: !!x.nr });
+          note: x.note, envoi: false, num: x.num, nr: !!x.nr, cadre: !!x.cadre });
       });
       afficherListe();
     });
@@ -654,7 +732,7 @@
     this.value = '';
     if (!f) return;
     etat('', 'Lecture de la photo…', '');
-    lirePhoto(f).then(function (texte) { dernierTexte = ''; recu(texte); })
+    lirePhoto(f).then(function (r) { dernierTexte = ''; recu(r.texte, r.cadre); })
       .catch(function () {
         bip(300, 0.25);
         etat('erreur', 'Aucun QR code lisible sur la photo', 'Rapproche-toi du QR code et évite les reflets.');
@@ -666,7 +744,7 @@
     var num = $('saisie-num').value.replace(/\D/g, '');
     if (num.length < 5) return;
     dernierTexte = '';
-    recu($('saisie-grad').value + ' ' + num);
+    recu($('saisie-grad').value + ' ' + num, '');
     $('saisie-num').value = '';
   };
 
