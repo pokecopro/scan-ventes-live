@@ -152,7 +152,7 @@
   <p class="aide" id="msg-csv"></p>
   <input id="fichier" type="file" accept="image/*" capture="environment" hidden>
   <div id="saisie" hidden>
-    <select id="saisie-grad"><option value="CA">CA</option><option value="PCA">PCA</option></select>
+    <select id="saisie-grad"><option value="CA">CA</option><option value="PCA">PCA</option><option value="PSA">PSA</option></select>
     <input id="saisie-num" type="text" inputmode="numeric" placeholder="N° de certificat">
     <button id="saisie-ok">OK</button>
   </div>
@@ -266,6 +266,8 @@
     if (m) return { gradateur: 'CollectAura', cert: m[1] };
     m = String(texte).match(/pcagrade\.com\/verif\/(\d+)/i);
     if (m) return { gradateur: 'PCA', cert: m[1] };
+    m = String(texte).match(/psacard\.com\/cert\/(\d{7,10})/i) || String(texte).match(/^PSAB?\s*(\d{7,10})$/i);
+    if (m) return { gradateur: 'PSA', cert: m[1] };
     m = String(texte).match(/^(CA|PCA)\s*(\d{5,})$/i);
     if (m) return { gradateur: m[1].toUpperCase() === 'CA' ? 'CollectAura' : 'PCA', cert: m[2] };
     return null;
@@ -282,7 +284,7 @@
     var a = analyser(texte);
     if (!a) {
       bip(300, 0.25);
-      etat('erreur', 'QR code non reconnu', 'Ce n\'est ni un boîtier PCA ni un CollectAura.');
+      etat('erreur', 'QR code non reconnu', 'Ce n\'est ni un boîtier PCA, ni un CollectAura, ni un PSA.');
       return;
     }
     if (session.mode === 'prix') {
@@ -340,7 +342,7 @@
       finaliser(scan, cadreConnu);
       return;
     }
-    etat('', 'CollectAura n° ' + a.cert, 'Recherche de la carte…');
+    etat('', a.gradateur + ' n° ' + a.cert, 'Recherche de la carte…');
     finaliser(scan, cadreConnu);
   }
 
@@ -381,11 +383,12 @@
     var moi = ++demandePrix;
     appeler('prixPlancher', { texte: texte, cadre: cadre }).then(function (r) {
       if (moi !== demandePrix) return;   // une autre carte a été scannée entre-temps
-      var carte = r.carte ? (r.carte + ' ' + (r.numero || '')).trim() + (r.note ? ' · CA ' + r.note : '') : '';
+      var carte = r.carte ? (r.carte + ' ' + (r.numero || '')).trim() + (r.note ? ' · ' + (r.gradateur === 'PSA' ? 'PSA ' : 'CA ') + r.note : '') : '';
+      if (r.raison === 'inconnu' && /^PSAB/.test(texte)) { refuses[texte] = true; afficherPlancher('', '–', 'Vise le QR code d\'une carte', ''); return; }
       if (r.ok) {
         var lignes = r.sites.map(function (s) { return s.site + ' : ' + s.yen + ' ¥'; });
         lignes.push('Prix d\'achat retenu : ' + r.yen + ' ¥, soit ' + euros(r.achat) + ' HT');
-        lignes.push('Gradation : ' + euros(r.gradation) + (r.cadre ? ' · Cadre : ' + euros(r.cadre) : ''));
+        lignes.push((r.gradation ? 'Gradation : ' + euros(r.gradation) : 'Gradation comprise dans le prix') + (r.cadre ? ' · Cadre : ' + euros(r.cadre) : ''));
         lignes.push('Coût total : ' + euros(r.cout) + ' HT · seuil exact : ' + euros(r.seuil));
         (r.notes || []).forEach(function (n) { lignes.push(n.replace(/erreur 403/, 'site inaccessible depuis l\'application')); });
         afficherPlancher('ok', r.plancher + ' €', carte, lignes.join('\n'));
@@ -398,6 +401,8 @@
         introuvable: ['Carte introuvable', 'CollectAura ne connaît pas ce certificat.'],
         taux: ['Taux de change indisponible', 'Réessaie dans un instant.'],
         inconnu: ['QR code non reconnu', ''],
+        psa: ['Carte PSA inconnue', 'Ce certificat n\'est pas dans l\'onglet PSA du Sheet (photo non lue ou absente du Drive).'],
+        psaPrix: ['Prix PSA à relever', 'Le prix de l\'étiquette rouge n\'a pas pu être lu sur la photo.'],
         prix: ['Prix d\'achat introuvable', (r.notes || []).join('\n')]
       };
       var x = raisons[r.raison] || ['Pas de prix', ''];
@@ -410,8 +415,18 @@
     });
   }
 
-  var barresOccupe = false;
+  var barresOccupe = false, refuses = {}, dernierPSA = 0;
   function chercherCadre(v) {
+    if (!fenetre && !barresOccupe && Date.now() - dernierPSA > 500) {
+      // aucune carte en cours : on cherche le code-barres de la face avant d'une coque PSA
+      dernierPSA = Date.now();
+      barresOccupe = true;
+      lireCodeBarres(v, v.videoWidth, v.videoHeight, /^\d{8,9}$/).then(function (num) {
+        barresOccupe = false;
+        if (num && !fenetre && !refuses['PSAB ' + num]) recu('PSAB ' + num);
+      });
+      return;
+    }
     if (!fenetre || barresOccupe) return;
     var f = fenetre;
     barresOccupe = true;
@@ -425,7 +440,8 @@
 
   // ---- code-barres classique (Code 128) de l'étiquette d'un cadre : « PRO-PCOL-00836 » ----
   var toileBarres = document.createElement('canvas');
-  function lireCodeBarres(source, sw, sh) {
+  function lireCodeBarres(source, sw, sh, motif) {
+    motif = motif || /^PRO-[A-Z0-9]+-\d+$/i;
     if (typeof zbarWasm === 'undefined') return Promise.resolve('');
     try {
       var k = Math.min(1, 1100 / Math.max(sw, sh));
@@ -436,7 +452,7 @@
         .then(function (codes) {
           for (var i = 0; i < codes.length; i++) {
             var t = codes[i].decode();
-            if (/^PRO-[A-Z0-9]+-\d+$/i.test(t)) return t.toUpperCase();
+            if (motif.test(t)) return t.toUpperCase();
           }
           return '';
         }).catch(function () { return ''; });
@@ -496,10 +512,10 @@
           if (!l.carte && r.carte) { l.carte = r.carte; l.numero = r.numero; l.note = r.note; }
           if (lignes[0] === l) {
             if (r.ailleurs) etat('alerte', l.carte || (l.gradateur + ' n° ' + l.cert), 'Déjà scannée sur ' + r.ailleurs);
-            else if (r.trouve && l.gradateur === 'CollectAura') etat('ok', (l.carte + ' ' + l.numero).trim(),
-              'CA ' + l.note + (r.extension ? ' · ' + r.extension : '') + ' · certificat ' + l.cert +
+            else if (r.trouve && l.gradateur !== 'PCA') etat(/PSA :/.test(r.statut) ? 'alerte' : 'ok', (l.carte + ' ' + l.numero).trim(),
+              (l.gradateur === 'PSA' ? 'PSA ' : 'CA ') + l.note + (/PSA :/.test(r.statut) ? ' · prix à relever' : '') + (r.extension ? ' · ' + r.extension : '') + ' · certificat ' + l.cert +
               (l.cadre ? ' · cadre + ' + PRIX_CADRE + ' € HT' : ''));
-            else if (!r.trouve && l.gradateur === 'CollectAura') etat('alerte', 'CollectAura n° ' + l.cert, r.statut);
+            else if (!r.trouve && l.gradateur !== 'PCA') etat('alerte', l.gradateur + ' n° ' + l.cert, r.statut);
           }
         } else {
           lignes = lignes.filter(function (x) { return x !== l; });
@@ -507,6 +523,9 @@
             bip(300, 0.25);
             etat('alerte', r.etat ? 'Déjà ' + r.etat : 'Déjà scannée (n° ' + r.num + ')',
               (r.carte ? r.carte + ' · ' : '') + 'certificat ' + l.cert);
+          } else if (/^PSAB/.test(s.texte)) {
+            // code-barres qui n'est pas un certificat PSA connu : on l'ignore sans bruit
+            delete vus[l.cle]; refuses[s.texte] = true;
           } else {
             delete vus[l.cle];
             etat('erreur', 'QR code non reconnu', '');
