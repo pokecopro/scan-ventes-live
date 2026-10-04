@@ -57,6 +57,15 @@
   li .c { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   li .c small { display: block; color: var(--doux); font-variant-numeric: tabular-nums; }
   li .g { flex: none; font-weight: 600; }
+  #plancher { border-radius: 12px; padding: 14px; margin: 10px 0 0; background: var(--carte); text-align: center;
+    border: 2px solid var(--trait); }
+  #plancher.ok { border-color: var(--ok); }
+  #plancher.non { border-color: var(--alerte); }
+  .pl-titre { font-size: 13px; color: var(--doux); text-transform: uppercase; letter-spacing: .06em; }
+  .pl-prix { font-size: 64px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  #plancher.non .pl-prix { font-size: 26px; padding: 14px 0; }
+  .pl-carte { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+  .pl-detail { font-size: 13px; color: var(--doux); margin-top: 6px; overflow-wrap: anywhere; white-space: pre-line; text-align: left; }
   li.envoi { opacity: .6; }
   li.nr .c { color: var(--doux); text-decoration: line-through; }
   li.nr .c small { text-decoration: none; color: var(--alerte); }
@@ -84,6 +93,7 @@
     <button class="mode" data-mode="renta"><b>Rentabilité</b><span>Scanner les cartes vendues après un live</span></button>
     <button class="mode" data-mode="listing"><b>Listing</b><span>Scanner les cartes d'un stream et sortir le CSV Whatnot</span></button>
     <button class="mode" data-mode="stock"><b>Inventaire</b><span>Faire entrer des cartes en stock</span></button>
+    <button class="mode" data-mode="prix"><b>Prix plancher</b><span>Scanner une carte pour savoir à partir de quel prix on gagne de l'argent</span></button>
   </div>
   <p class="aide" id="msg-menu"></p>
 </section>
@@ -124,6 +134,12 @@
     <div id="viseur"></div>
     <button id="lampe" hidden>Lampe</button>
   </div>
+  <div id="plancher" hidden>
+    <div class="pl-titre" id="pl-titre">Prix plancher</div>
+    <div class="pl-prix" id="pl-prix">–</div>
+    <div class="pl-carte" id="pl-carte"></div>
+    <div class="pl-detail" id="pl-detail"></div>
+  </div>
   <div id="etat"><div class="t">Vise le QR code d'un boîtier</div><div class="s">La carte s'enregistre toute seule.</div></div>
   <div id="envoi"></div>
   <div class="actions">
@@ -158,7 +174,8 @@
   var MODES = {
     renta: { titre: 'Rentabilité', unite: 'vendue(s)', date: 'Date du live' },
     listing: { titre: 'Listing', unite: 'listée(s)', date: 'Date du stream' },
-    stock: { titre: 'Inventaire', unite: 'en stock', date: '' }
+    stock: { titre: 'Inventaire', unite: 'en stock', date: '' },
+    prix: { titre: 'Prix plancher', unite: '', date: '' }
   };
   var lignes = [];       // cartes du live, la plus récente en premier
   var vus = {};          // "Gradateur certificat" déjà scanné sur ce live
@@ -199,6 +216,7 @@
     try { if (navigator.vibrate) navigator.vibrate(freq > 600 ? 60 : [80, 60, 80]); } catch (e) {}
   }
   function etat(type, titre, sous) {
+    if (session.mode === 'prix') { afficherPlancher('non', titre, '', sous || ''); return; }
     var e = $('etat');
     e.className = type;
     e.innerHTML = '';
@@ -256,6 +274,16 @@
     if (!a) {
       bip(300, 0.25);
       etat('erreur', 'QR code non reconnu', 'Ce n\'est ni un boîtier PCA ni un CollectAura.');
+      return;
+    }
+    if (session.mode === 'prix') {
+      // mode Prix plancher : rien n'est enregistré, on affiche seulement le prix de vente minimum
+      bip(900, 0.08);
+      $('lecteur').classList.add('flash');
+      setTimeout(function () { $('lecteur').classList.remove('flash'); }, 250);
+      afficherPlancher('', 'Recherche…', a.gradateur + ' n° ' + a.cert, '');
+      if (cadreConnu === undefined && flux) fenetre = { texte: texte, prix: true, fin: maintenant + 1200 };
+      else demanderPrix(texte, cadreConnu || '');
       return;
     }
     var cle = a.gradateur + ' ' + a.cert;
@@ -321,6 +349,7 @@
     var f = fenetre; fenetre = null;
     if (!f) return;
     if (ref) bip(1200, 0.08);
+    if (f.prix) { demanderPrix(f.texte, ref); return; }
     if (f.scan) {
       f.scan.cadre = ref;
       if (ref) f.scan.ligne.cadre = true;
@@ -330,6 +359,48 @@
     }
     afficherListe(); vider();
   }
+  // ---- Prix plancher ----
+  function afficherPlancher(type, prix, carte, detail) {
+    $('plancher').className = type;
+    $('pl-prix').textContent = prix;
+    $('pl-carte').textContent = carte;
+    $('pl-detail').textContent = detail;
+  }
+  function euros(v) { return String(v.toFixed(2)).replace('.', ',') + ' €'; }
+  var demandePrix = 0;
+  function demanderPrix(texte, cadre) {
+    var moi = ++demandePrix;
+    appeler('prixPlancher', { texte: texte, cadre: cadre }).then(function (r) {
+      if (moi !== demandePrix) return;   // une autre carte a été scannée entre-temps
+      var carte = r.carte ? (r.carte + ' ' + (r.numero || '')).trim() + (r.note ? ' · CA ' + r.note : '') : '';
+      if (r.ok) {
+        var lignes = r.sites.map(function (s) { return s.site + ' : ' + s.yen + ' ¥'; });
+        lignes.push('Prix d\'achat retenu : ' + r.yen + ' ¥, soit ' + euros(r.achat) + ' HT');
+        lignes.push('Gradation : ' + euros(r.gradation) + (r.cadre ? ' · Cadre : ' + euros(r.cadre) : ''));
+        lignes.push('Coût total : ' + euros(r.cout) + ' HT · seuil exact : ' + euros(r.seuil));
+        (r.notes || []).forEach(function (n) { lignes.push(n); });
+        afficherPlancher('ok', r.plancher + ' €', carte, lignes.join('\n'));
+        return;
+      }
+      bip(300, 0.25);
+      var raisons = {
+        pca: ['Carte PCA', 'Le nom de la carte n\'est pas connu tant que PCA n\'a pas ouvert son API.'],
+        langue: ['Carte française', 'Les sites de prix ne vendent que des cartes japonaises.'],
+        introuvable: ['Carte introuvable', 'CollectAura ne connaît pas ce certificat.'],
+        taux: ['Taux de change indisponible', 'Réessaie dans un instant.'],
+        inconnu: ['QR code non reconnu', ''],
+        prix: ['Prix d\'achat introuvable', (r.notes || []).join('\n')]
+      };
+      var x = raisons[r.raison] || ['Pas de prix', ''];
+      afficherPlancher('non', x[0], carte || ('Certificat ' + (r.cert || '')), x[1]);
+    }).catch(function (e) {
+      if (moi !== demandePrix) return;
+      var msg = String(e && e.message || e);
+      afficherPlancher('non', msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect' : 'Recherche impossible',
+        '', msg.indexOf('CODE_INVALIDE') >= 0 ? 'Touche « Terminer » et retape le code.' : msg);
+    });
+  }
+
   var barresOccupe = false;
   function chercherCadre(v) {
     if (!fenetre || barresOccupe) return;
@@ -628,6 +699,7 @@
       if (!code) { $('msg-menu').textContent = 'Tape d\'abord le code d\'accès.'; return; }
       var m = b.dataset.mode;
       session.code = code; session.mode = m;
+      if (m === 'prix') { ouvrirPrix(); return; }
       $('msg-menu').textContent = '';
       $('titre-depart').textContent = MODES[m].titre;
       $('champs-live').hidden = (m === 'stock');
@@ -663,6 +735,8 @@
     session.live = live;
     chargerLive().then(function () {
       ecrire('svl-code', session.code); ecrire('svl-chaine', $('chaine').value);
+      $('total').parentNode.hidden = false; $('plancher').hidden = true;
+      ['etat', 'envoi', 'btn-annuler', 'liste'].forEach(function (id) { $(id).hidden = false; });
       $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock' ? (precision || 'stock') : live);
       $('unite').textContent = MODES[m].unite;
       $('btn-csv').hidden = (m !== 'listing'); $('msg-csv').textContent = '';
@@ -676,6 +750,21 @@
       $('msg-depart').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect. Reviens au menu pour le corriger.' : msg;
     }).then(function () { $('commencer').disabled = false; });
   };
+
+  function ouvrirPrix() {
+    session.live = 'PRIX'; lignes = []; file = []; vus = {}; compteur = 0; dernierTexte = '';
+    ecrire('svl-code', session.code);
+    $('msg-menu').textContent = '';
+    $('nom-live').textContent = 'Prix plancher';
+    $('total').parentNode.hidden = true;
+    ['etapes', 'etat', 'envoi', 'btn-annuler', 'btn-csv', 'liste'].forEach(function (id) { $(id).hidden = true; });
+    $('msg-csv').textContent = '';
+    $('plancher').hidden = false;
+    afficherPlancher('', '–', 'Vise le QR code d\'une carte', 'Le prix de vente minimum sur Whatnot s\'affiche ici, en euros entiers.');
+    $('ecran-menu').hidden = true; $('ecran-scan').hidden = false; $('lecteur').hidden = false;
+    basculerNR(false);
+    demarrerCamera();
+  }
 
   // ---- Rentabilité : ventes non réglées ----
   function basculerNR(actif) {
