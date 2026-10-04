@@ -60,8 +60,10 @@
   li.envoi { opacity: .6; }
   li.nr .c { color: var(--doux); text-decoration: line-through; }
   li.nr .c small { text-decoration: none; color: var(--alerte); }
-  #btn-nr { width: 100%; margin-top: 8px; font-size: 14px; }
-  #btn-nr.actif { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
+  #etapes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  #etapes button { font-size: 14px; padding: 10px 8px; }
+  #etape-1.actif { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  #etape-2.actif { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
   #lecteur.nr #viseur { border-color: var(--alerte); }
   .aide { color: var(--doux); font-size: 13px; margin-top: 8px; overflow-wrap: anywhere; }
   .date3 { display: grid; grid-template-columns: 1fr 1.6fr 1.2fr; gap: 8px; }
@@ -113,6 +115,10 @@
     <b id="nom-live"></b>
     <span class="compteur"><strong id="total">0</strong> <span id="unite">carte(s)</span></span>
   </div>
+  <div id="etapes" hidden>
+    <button id="etape-1" class="actif">1 · Toutes les cartes</button>
+    <button id="etape-2">2 · Non régulés</button>
+  </div>
   <div id="lecteur">
     <video id="video" playsinline muted autoplay></video>
     <div id="viseur"></div>
@@ -126,7 +132,6 @@
     <button id="btn-annuler">Annuler le dernier</button>
     <button id="btn-changer">Terminer</button>
   </div>
-  <button id="btn-nr" hidden>Non régulés</button>
   <button class="principal" id="btn-csv" hidden>Télécharger le CSV Whatnot</button>
   <p class="aide" id="msg-csv"></p>
   <input id="fichier" type="file" accept="image/*" capture="environment" hidden>
@@ -583,7 +588,7 @@
       $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock' ? (precision || 'stock') : live);
       $('unite').textContent = MODES[m].unite;
       $('btn-csv').hidden = (m !== 'listing'); $('msg-csv').textContent = '';
-      $('btn-nr').hidden = (m !== 'renta'); basculerNR(false);
+      $('etapes').hidden = (m !== 'renta'); basculerNR(false);
       $('ecran-depart').hidden = true; $('ecran-scan').hidden = false;
       $('lecteur').hidden = false;
       etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
@@ -597,14 +602,18 @@
   // ---- Rentabilité : ventes non réglées ----
   function basculerNR(actif) {
     modeNR = actif; dernierTexte = '';
-    $('btn-nr').classList.toggle('actif', actif);
-    $('btn-nr').textContent = actif ? 'Non régulés : scan en cours (toucher pour arrêter)' : 'Non régulés';
+    $('etape-1').classList.toggle('actif', !actif);
+    $('etape-2').classList.toggle('actif', actif);
     $('lecteur').classList.toggle('nr', actif);
   }
-  $('btn-nr').onclick = function () {
-    basculerNR(!modeNR);
-    if (modeNR) etat('alerte', 'Scanne les cartes non réglées', 'Chaque carte scannée sort des ventes de ce live et retourne en stock.');
-    else etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
+  $('etape-1').onclick = function () {
+    basculerNR(false);
+    etat('', 'Étape 1 : scanne toutes les cartes du live', 'Chaque carte scannée est comptée comme vendue.');
+  };
+  $('etape-2').onclick = function () {
+    basculerNR(true);
+    etat('alerte', 'Étape 2 : rescanne les non régulés',
+      'Ce sont les cartes qui restent une fois les colis finis. Elles sortent du calcul et retournent en stock.');
   };
 
   // ---- Listing : fichier d'import Whatnot ----
