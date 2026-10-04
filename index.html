@@ -58,6 +58,11 @@
   li .c small { display: block; color: var(--doux); font-variant-numeric: tabular-nums; }
   li .g { flex: none; font-weight: 600; }
   li.envoi { opacity: .6; }
+  li.nr .c { color: var(--doux); text-decoration: line-through; }
+  li.nr .c small { text-decoration: none; color: var(--alerte); }
+  #btn-nr { width: 100%; margin-top: 8px; font-size: 14px; }
+  #btn-nr.actif { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
+  #lecteur.nr #viseur { border-color: var(--alerte); }
   .aide { color: var(--doux); font-size: 13px; margin-top: 8px; overflow-wrap: anywhere; }
   .date3 { display: grid; grid-template-columns: 1fr 1.6fr 1.2fr; gap: 8px; }
   .modes { display: grid; gap: 10px; margin-top: 18px; }
@@ -121,6 +126,7 @@
     <button id="btn-annuler">Annuler le dernier</button>
     <button id="btn-changer">Terminer</button>
   </div>
+  <button id="btn-nr" hidden>Non régulés</button>
   <button class="principal" id="btn-csv" hidden>Télécharger le CSV Whatnot</button>
   <p class="aide" id="msg-csv"></p>
   <input id="fichier" type="file" accept="image/*" capture="environment" hidden>
@@ -139,6 +145,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var session = { code: '', live: '', mode: 'renta' };
+  var modeNR = false;    // vrai quand on scanne les ventes non réglées
   var compteur = 0;      // nombre renvoyé par le Sheet (cartes de la session, ou cartes en stock)
   var MODES = {
     renta: { titre: 'Rentabilité', unite: 'vendue(s)', date: 'Date du live' },
@@ -198,19 +205,23 @@
     liste.innerHTML = '';
     lignes.forEach(function (l) {
       var li = document.createElement('li');
-      if (l.envoi) li.className = 'envoi';
+      li.className = (l.envoi ? 'envoi' : '') + (l.nr ? ' nr' : '');
       var n = document.createElement('span'); n.className = 'n'; n.textContent = l.num || '…';
       var c = document.createElement('span'); c.className = 'c';
       c.textContent = l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : 'Carte à compléter';
-      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert;
+      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert + (l.nr ? ' · non régulé' : '');
       c.appendChild(p);
       var g = document.createElement('span'); g.className = 'g';
       g.textContent = prefixe(l.gradateur) + (l.note ? ' ' + l.note : '');
       li.appendChild(n); li.appendChild(c); li.appendChild(g);
       liste.appendChild(li);
     });
-    $('total').textContent = compteur + file.length;
     var attente = file.length;
+    $('total').textContent = compteur + file.filter(function (s) { return !s.nr && !s.retablir; }).length;
+    if (session.mode === 'renta') {
+      var nbNR = lignes.filter(function (l) { return l.nr; }).length;
+      $('unite').textContent = MODES.renta.unite + (nbNR ? ' · ' + nbNR + ' non régulé(s)' : '');
+    }
     $('envoi').textContent = attente ? attente + ' carte(s) en cours d\'enregistrement…' : '';
   }
 
@@ -237,9 +248,25 @@
       return;
     }
     var cle = a.gradateur + ' ' + a.cert;
+    var deja = lignes.filter(function (l) { return l.cle === cle; })[0];
+    if (modeNR) {
+      // vente non réglée : la carte sort des ventes du live et retourne en stock
+      bip(600, 0.1);
+      etat('', a.gradateur + ' n° ' + a.cert, 'Passage en non régulé…');
+      file.push({ texte: texte, cle: cle, cert: a.cert, nr: true, pret: true });
+      afficherListe(); vider();
+      return;
+    }
+    if (deja && deja.nr) {
+      // carte non régulée rescannée comme vendue : la vente a finalement été payée
+      bip(900, 0.08);
+      etat('', a.gradateur + ' n° ' + a.cert, 'Remise en vendue…');
+      file.push({ texte: texte, ligne: deja, retablir: true, pret: true });
+      afficherListe(); vider();
+      return;
+    }
     if (vus[cle]) {
       bip(300, 0.25);
-      var deja = lignes.filter(function (l) { return l.cle === cle; })[0];
       etat('alerte', 'Déjà scannée' + (deja && deja.num ? ' (n° ' + deja.num + ')' : ''),
         (deja && deja.carte ? deja.carte + ' · ' : '') + 'certificat ' + a.cert);
       return;
@@ -268,10 +295,12 @@
   function vider() {
     if (enCours) return;
     var lot = [];
-    while (lot.length < 20 && file[lot.length] && file[lot.length].pret) lot.push(file[lot.length]);
+    var nr = !!(file[0] && file[0].nr);   // un paquet ne mélange pas ventes et non régulés
+    while (lot.length < 20 && file[lot.length] && file[lot.length].pret && !!file[lot.length].nr === nr) lot.push(file[lot.length]);
     if (!lot.length) return;
     enCours = true;
     appeler('enregistrerLot', {
+      nonRegle: nr,
       scans: lot.map(function (s) { return { texte: s.texte }; })
     }).then(function (rep) {
       var res = rep.resultats || [];
@@ -279,6 +308,30 @@
       file.splice(0, lot.length);
       lot.forEach(function (s, i) {
         var r = res[i] || {}, l = s.ligne;
+        if (s.nr) {
+          var cible = lignes.filter(function (x) { return x.cle === s.cle; })[0];
+          if (r.ok) {
+            if (cible) cible.nr = true;
+            etat('ok', 'Non régulé : ' + (r.carte ? (r.carte + ' ' + (r.numero || '')).trim() : 'certificat ' + s.cert),
+              'Retirée des ventes du live (n° ' + r.num + ') et remise en stock.');
+          } else if (r.raison === 'dejaNonRegle') {
+            bip(300, 0.25);
+            etat('alerte', 'Déjà en non régulé', (r.carte ? r.carte + ' · ' : '') + 'certificat ' + s.cert);
+          } else if (r.raison === 'absent') {
+            bip(300, 0.25);
+            etat('erreur', 'Cette carte n\'est pas dans ce live',
+              r.ailleurs ? 'Elle a été scannée sur ' + r.ailleurs + '.' : 'Certificat ' + s.cert + ' : jamais scanné comme vendu ici.');
+          } else {
+            etat('erreur', 'QR code non reconnu', '');
+          }
+          return;
+        }
+        if (r.ok && r.retabli) {
+          l.nr = false;
+          etat('ok', 'Remise en vendue', (l.carte ? l.carte + ' · ' : '') + 'certificat ' + l.cert);
+          return;
+        }
+        if (s.retablir) return;
         if (r.ok) {
           l.envoi = false; l.num = r.num;
           if (!l.carte && r.carte) { l.carte = r.carte; l.numero = r.numero; l.note = r.note; }
@@ -442,7 +495,7 @@
         // en stock, c'est le Sheet qui répond « déjà en stock » ou « déjà vendue sur … »
         if (session.mode !== 'stock') vus[cle] = true;
         lignes.unshift({ cle: cle, gradateur: x.gradateur, cert: x.cert, carte: x.carte, numero: x.numero,
-          note: x.note, envoi: false, num: x.num });
+          note: x.note, envoi: false, num: x.num, nr: !!x.nr });
       });
       afficherListe();
     });
@@ -530,6 +583,7 @@
       $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock' ? (precision || 'stock') : live);
       $('unite').textContent = MODES[m].unite;
       $('btn-csv').hidden = (m !== 'listing'); $('msg-csv').textContent = '';
+      $('btn-nr').hidden = (m !== 'renta'); basculerNR(false);
       $('ecran-depart').hidden = true; $('ecran-scan').hidden = false;
       $('lecteur').hidden = false;
       etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
@@ -538,6 +592,19 @@
       var msg = String(e && e.message || e);
       $('msg-depart').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect. Reviens au menu pour le corriger.' : msg;
     }).then(function () { $('commencer').disabled = false; });
+  };
+
+  // ---- Rentabilité : ventes non réglées ----
+  function basculerNR(actif) {
+    modeNR = actif; dernierTexte = '';
+    $('btn-nr').classList.toggle('actif', actif);
+    $('btn-nr').textContent = actif ? 'Non régulés : scan en cours (toucher pour arrêter)' : 'Non régulés';
+    $('lecteur').classList.toggle('nr', actif);
+  }
+  $('btn-nr').onclick = function () {
+    basculerNR(!modeNR);
+    if (modeNR) etat('alerte', 'Scanne les cartes non réglées', 'Chaque carte scannée sort des ventes de ce live et retourne en stock.');
+    else etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
   };
 
   // ---- Listing : fichier d'import Whatnot ----
