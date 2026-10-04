@@ -442,6 +442,11 @@
     });
   }
 
+  function aujourdhui() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+
   // ---- menu des trois modes ----
   Array.prototype.forEach.call(document.querySelectorAll('.mode'), function (b) {
     b.onclick = function () {
@@ -453,6 +458,9 @@
       $('titre-depart').textContent = MODES[m].titre;
       $('champs-live').hidden = (m === 'stock');
       $('lib-date').textContent = MODES[m].date;
+      // Rentabilité : seulement un live passé ou en cours, jamais une date à venir
+      $('date').max = (m === 'renta') ? aujourdhui() : '';
+      if (m === 'renta' && $('date').value > aujourdhui()) $('date').value = aujourdhui();
       $('lib-precision').textContent = m === 'stock'
         ? 'Lot (facultatif, ex. Retour PCA boîte 12)'
         : 'Précision (facultatif, ex. 17h ou GRADEE JAP)';
@@ -469,6 +477,10 @@
       live = 'STOCK' + (precision ? ' ' + precision : '');
     } else {
       if (!date) { $('msg-depart').textContent = 'Il manque la date.'; return; }
+      if (m === 'renta' && date > aujourdhui()) {
+        $('msg-depart').textContent = 'Ce live n\'a pas encore eu lieu. En Rentabilité, choisis un live passé ou en cours.';
+        return;
+      }
       var p = date.split('-');
       live = $('chaine').value + ' ' + p[2] + '/' + p[1] + '/' + p[0] + (precision ? ' ' + precision : '');
     }
