@@ -192,15 +192,24 @@
   function ecrire(cle, v) { try { localStorage.setItem(cle, v); } catch (e) {} }
 
   // ---- appel au script Google ----
-  function appeler(fonction, donnees) {
+  // Les lectures (prix, chargement, CSV) sont retentées une fois si le réseau décroche.
+  var RELANCABLES = { prixPlancher: 1, charger: 1, csvListing: 1 };
+  function appeler(fonction, donnees, dejaRelance) {
+    var corps = JSON.stringify({ fn: fonction, req: Object.assign(
+      { code: session.code, live: session.live, mode: session.mode }, donnees || {}) });
     return fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ fn: fonction, req: Object.assign(
-        { code: session.code, live: session.live, mode: session.mode }, donnees || {}) }),
+      body: corps,
       redirect: 'follow'
     }).then(function (r) { return r.json(); })
-      .then(function (j) { if (!j.ok) throw new Error(j.error); return j.data; });
+      .then(function (j) { if (!j.ok) throw new Error(j.error); return j.data; })
+      .catch(function (e) {
+        var reseau = !(e && /^[A-Z_]+$/.test(e.message || ''));   // les erreurs du script sont en MAJUSCULES
+        if (!reseau || dejaRelance || !RELANCABLES[fonction]) throw e;
+        return new Promise(function (ok) { setTimeout(ok, 1200); })
+          .then(function () { return appeler(fonction, donnees, true); });
+      });
   }
 
   // ---- retours sonores et visuels ----
@@ -378,7 +387,7 @@
         lignes.push('Prix d\'achat retenu : ' + r.yen + ' ¥, soit ' + euros(r.achat) + ' HT');
         lignes.push('Gradation : ' + euros(r.gradation) + (r.cadre ? ' · Cadre : ' + euros(r.cadre) : ''));
         lignes.push('Coût total : ' + euros(r.cout) + ' HT · seuil exact : ' + euros(r.seuil));
-        (r.notes || []).forEach(function (n) { lignes.push(n); });
+        (r.notes || []).forEach(function (n) { lignes.push(n.replace(/erreur 403/, 'site inaccessible depuis l\'application')); });
         afficherPlancher('ok', r.plancher + ' €', carte, lignes.join('\n'));
         return;
       }
