@@ -59,6 +59,7 @@
   li .g { flex: none; font-weight: 600; }
   li.envoi { opacity: .6; }
   .aide { color: var(--doux); font-size: 13px; margin-top: 8px; overflow-wrap: anywhere; }
+  .date3 { display: grid; grid-template-columns: 1fr 1.6fr 1.2fr; gap: 8px; }
   .modes { display: grid; gap: 10px; margin-top: 18px; }
   .mode { text-align: left; padding: 16px; }
   .mode b { display: block; font-size: 17px; }
@@ -87,8 +88,13 @@
     <select id="chaine">
       <option>MAIN</option><option>BIS</option><option>OSMO</option><option>PROTECH</option>
     </select>
-    <label for="date" id="lib-date">Date du live</label>
-    <input id="date" type="date">
+    <label for="jour" id="lib-date">Date du live</label>
+    <div class="date3">
+      <select id="jour" aria-label="Jour"></select>
+      <select id="mois" aria-label="Mois"></select>
+      <select id="annee" aria-label="Année"></select>
+    </div>
+    <input id="date" type="hidden">
   </div>
   <label for="precision" id="lib-precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
   <input id="precision" type="text" autocomplete="off">
@@ -447,6 +453,38 @@
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
 
+  // ---- date en trois menus : jour / mois / année ----
+  var MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre',
+    'octobre', 'novembre', 'décembre'];
+  function remplir(menu, valeurs, libelles, choisi) {
+    menu.innerHTML = '';
+    valeurs.forEach(function (v, i) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = libelles ? libelles[i] : v;
+      menu.appendChild(o);
+    });
+    // si la valeur voulue n'est pas proposée, on prend la plus proche possible (la dernière)
+    menu.value = valeurs.indexOf(choisi) >= 0 ? choisi : (choisi < valeurs[0] ? valeurs[0] : valeurs[valeurs.length - 1]);
+  }
+  function suite(n) { var t = []; for (var i = 1; i <= n; i++) t.push(i); return t; }
+  function majDate(a, m, j) {
+    var limite = (session.mode === 'renta');
+    var t = new Date(), ta = t.getFullYear(), tm = t.getMonth() + 1, tj = t.getDate();
+    remplir($('annee'), limite ? [ta - 1, ta] : [ta - 1, ta, ta + 1], null, a);
+    a = +$('annee').value;
+    var mois = suite(limite && a === ta ? tm : 12);
+    remplir($('mois'), mois, mois.map(function (i) { return MOIS[i - 1]; }), m);
+    m = +$('mois').value;
+    var nb = new Date(a, m, 0).getDate();
+    if (limite && a === ta && m === tm) nb = Math.min(nb, tj);
+    remplir($('jour'), suite(nb), null, j);
+    j = +$('jour').value;
+    $('date').value = a + '-' + ('0' + m).slice(-2) + '-' + ('0' + j).slice(-2);
+  }
+  ['jour', 'mois', 'annee'].forEach(function (id) {
+    $(id).onchange = function () { majDate(+$('annee').value, +$('mois').value, +$('jour').value); };
+  });
+
   // ---- menu des trois modes ----
   Array.prototype.forEach.call(document.querySelectorAll('.mode'), function (b) {
     b.onclick = function () {
@@ -458,9 +496,9 @@
       $('titre-depart').textContent = MODES[m].titre;
       $('champs-live').hidden = (m === 'stock');
       $('lib-date').textContent = MODES[m].date;
-      // Rentabilité : seulement un live passé ou en cours, jamais une date à venir
-      $('date').max = (m === 'renta') ? aujourdhui() : '';
-      if (m === 'renta' && $('date').value > aujourdhui()) $('date').value = aujourdhui();
+      // Rentabilité : seulement un live passé ou en cours, les dates à venir ne sont pas proposées
+      var v = $('date').value.split('-');
+      majDate(+v[0], +v[1], +v[2]);
       $('lib-precision').textContent = m === 'stock'
         ? 'Lot (facultatif, ex. Retour PCA boîte 12)'
         : 'Précision (facultatif, ex. 17h ou GRADEE JAP)';
