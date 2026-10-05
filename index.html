@@ -386,24 +386,19 @@
       var carte = r.carte ? (r.carte + ' ' + (r.numero || '')).trim() + (r.note ? ' · ' + (r.gradateur === 'PSA' ? 'PSA ' : 'CA ') + r.note : '') : '';
       if (r.raison === 'inconnu' && /^PSAB/.test(texte)) { refuses[texte] = true; afficherPlancher('', '–', 'Vise le QR code d\'une carte', ''); return; }
       if (r.ok) {
-        var lignes = r.sites.map(function (s) { return s.site + ' : ' + s.yen + ' ¥'; });
-        lignes.push('Prix d\'achat retenu : ' + r.yen + ' ¥, soit ' + euros(r.achat) + ' HT');
-        lignes.push((r.gradation ? 'Gradation : ' + euros(r.gradation) : 'Gradation comprise dans le prix') + (r.cadre ? ' · Cadre : ' + euros(r.cadre) : ''));
-        lignes.push('Coût total : ' + euros(r.cout) + ' HT · seuil exact : ' + euros(r.seuil));
-        (r.notes || []).forEach(function (n) { lignes.push(n.replace(/erreur 403/, 'site inaccessible depuis l\'application')); });
-        afficherPlancher('ok', r.plancher + ' €', carte, lignes.join('\n'));
+        afficherPlancher('ok', r.plancher + ' €', carte, r.cadre ? 'Cadre compris' : '');
         return;
       }
       bip(300, 0.25);
       var raisons = {
         pca: ['Carte PCA', 'Le nom de la carte n\'est pas connu tant que PCA n\'a pas ouvert son API.'],
-        langue: ['Carte française', 'Les sites de prix ne vendent que des cartes japonaises.'],
+        langue: ['Carte française', 'Pas de prix plancher pour les cartes françaises.'],
         introuvable: ['Carte introuvable', 'CollectAura ne connaît pas ce certificat.'],
         taux: ['Taux de change indisponible', 'Réessaie dans un instant.'],
         inconnu: ['QR code non reconnu', ''],
-        psa: ['Carte PSA inconnue', 'Ce certificat n\'est pas dans l\'onglet PSA du Sheet (photo non lue ou absente du Drive).'],
-        psaPrix: ['Prix PSA à relever', 'Le prix de l\'étiquette rouge n\'a pas pu être lu sur la photo.'],
-        prix: ['Prix d\'achat introuvable', (r.notes || []).join('\n')]
+        psa: ['Pas de prix pour cette carte', 'Carte PSA pas encore enregistrée.'],
+        psaPrix: ['Pas de prix pour cette carte', ''],
+        prix: ['Pas de prix pour cette carte', '']
       };
       var x = raisons[r.raison] || ['Pas de prix', ''];
       afficherPlancher('non', x[0], carte || ('Certificat ' + (r.cert || '')), x[1]);
