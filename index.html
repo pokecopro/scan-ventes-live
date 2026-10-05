@@ -77,9 +77,24 @@
   .aide { color: var(--doux); font-size: 13px; margin-top: 8px; overflow-wrap: anywhere; }
   .date3 { display: grid; grid-template-columns: 1fr 1.6fr 1.2fr; gap: 8px; }
   .modes { display: grid; gap: 10px; margin-top: 18px; }
-  .mode { text-align: left; padding: 16px; }
+  .mode { text-align: left; padding: 14px; display: flex; align-items: center; gap: 14px; position: relative; overflow: hidden;
+    border-color: color-mix(in srgb, var(--c) 35%, var(--trait));
+    background: linear-gradient(100deg, color-mix(in srgb, var(--c) 16%, var(--carte)), var(--carte) 62%); }
+  .mode::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+  .mode:active { transform: scale(.985); }
+  .mode i { flex: none; width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c); }
+  .mode i svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .mode div { flex: 1; min-width: 0; }
   .mode b { display: block; font-size: 17px; }
   .mode span { display: block; color: var(--doux); font-size: 14px; margin-top: 2px; }
+  .mode em { flex: none; font-style: normal; font-size: 22px; color: var(--c); opacity: .8; }
+  .mode[data-mode="renta"] { --c: #37c98b; }
+  .mode[data-mode="listing"] { --c: #4f9cf5; }
+  .mode[data-mode="stock"] { --c: #a78bfa; }
+  .mode[data-mode="prix"] { --c: #f2b33d; }
+  #ecran-menu h1 { font-size: 26px; letter-spacing: -.3px;
+    background: linear-gradient(90deg, #4f9cf5, #a78bfa 55%, #f2b33d); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .retour { width: 100%; margin-top: 10px; }
 </style>
 </head>
@@ -90,10 +105,10 @@
   <label for="code">Code d'accès</label>
   <input id="code" type="password" inputmode="numeric" autocomplete="off">
   <div class="modes">
-    <button class="mode" data-mode="renta"><b>Rentabilité</b><span>Scanner les cartes vendues après un live</span></button>
-    <button class="mode" data-mode="listing"><b>Listing</b><span>Scanner les cartes d'un stream et sortir le CSV Whatnot</span></button>
-    <button class="mode" data-mode="stock"><b>Inventaire</b><span>Faire entrer des cartes en stock</span></button>
-    <button class="mode" data-mode="prix"><b>Prix plancher</b><span>Scanner une carte pour savoir à partir de quel prix on gagne de l'argent</span></button>
+    <button class="mode" data-mode="renta"><i><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L19 8"/></svg></i><div><b>Rentabilité</b><span>Scanner les cartes vendues après un live</span></div><em>›</em></button>
+    <button class="mode" data-mode="listing"><i><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></i><div><b>Listing</b><span>Scanner les cartes d'un stream et sortir le CSV Whatnot</span></div><em>›</em></button>
+    <button class="mode" data-mode="stock"><i><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg></i><div><b>Inventaire</b><span>Faire entrer des cartes en stock</span></div><em>›</em></button>
+    <button class="mode" data-mode="prix"><i><svg viewBox="0 0 24 24"><path d="M20.5 13.5l-7 7a2 2 0 0 1-2.8 0L3 12.8V4h8.8l8.7 8.7a2 2 0 0 1 0 .8zM7.5 8.5h.01"/></svg></i><div><b>Prix plancher</b><span>Scanner une carte pour savoir à partir de quel prix on gagne de l'argent</span></div><em>›</em></button>
   </div>
   <p class="aide" id="msg-menu"></p>
 </section>
