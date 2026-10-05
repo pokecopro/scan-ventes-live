@@ -38,6 +38,8 @@
   #lecteur.flash #viseur { border-color: var(--ok); }
   #lampe { position: absolute; right: 8px; bottom: 8px; padding: 8px 12px; font-size: 13px;
     background: rgba(16,21,28,.75); }
+  #autre-camera { position: absolute; left: 8px; bottom: 8px; padding: 8px 12px; font-size: 13px;
+    background: rgba(16,21,28,.75); }
   #etat { border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: var(--carte);
     border-left: 6px solid var(--trait); min-height: 76px; }
   #etat.ok { border-left-color: var(--ok); }
@@ -148,6 +150,7 @@
     <video id="video" playsinline muted autoplay></video>
     <div id="viseur"></div>
     <button id="lampe" hidden>Lampe</button>
+    <button id="autre-camera" hidden>Changer de caméra</button>
   </div>
   <div id="plancher" hidden>
     <div class="pl-titre" id="pl-titre">Prix plancher</div>
@@ -575,10 +578,11 @@
   }
 
   // ---- caméra en direct ----
-  function boucle() {
-    if (!flux) return;
+  var generation = 0;   // une seule boucle de lecture à la fois, même quand on change de caméra
+  function boucle(g) {
+    if (!flux || g !== generation) return;
     var v = $('video');
-    var suite = function () { if (flux) setTimeout(boucle, 40); };
+    var suite = function () { if (flux) setTimeout(function () { boucle(g); }, 40); };
     if (v.readyState < 2 || !v.videoWidth) { suite(); return; }
     var c = Math.floor(Math.min(v.videoWidth, v.videoHeight) * 0.7);
     var sx = Math.floor((v.videoWidth - c) / 2), sy = Math.floor((v.videoHeight - c) / 2);
@@ -600,16 +604,39 @@
     suite();
   }
 
-  function demarrerCamera() {
+  // Sur Android, le téléphone a souvent plusieurs caméras arrière (grand angle, zoom…) et Chrome ne choisit pas
+  // toujours la principale : on la cherche, et un bouton permet d'en changer. Le choix est retenu sur le téléphone.
+  var ANDROID = /Android/i.test(navigator.userAgent);
+  var camerasArriere = [], cameraChoisie = lire('camera');
+  function listerCameras() {
+    if (!navigator.mediaDevices.enumerateDevices) return Promise.resolve([]);
+    return navigator.mediaDevices.enumerateDevices().then(function (ds) {
+      var cams = ds.filter(function (d) { return d.kind === 'videoinput' && d.deviceId; });
+      var arr = cams.filter(function (d) { return /back|rear|arri|environment/i.test(d.label); });
+      return arr.length ? arr : cams.filter(function (d) { return !/front|avant|user|selfie/i.test(d.label); });
+    }).catch(function () { return []; });
+  }
+  function demarrerCamera(idCamera, dejaCherche) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       cameraIndisponible('navigateur sans accès caméra');
       return;
     }
-    navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-    }).then(function (s) {
+    var id = idCamera || cameraChoisie;
+    var video = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    if (id) video.deviceId = { exact: id }; else video.facingMode = { ideal: 'environment' };
+    navigator.mediaDevices.getUserMedia({ audio: false, video: video }).then(function (s) {
       flux = s; piste = s.getVideoTracks()[0];
+      listerCameras().then(function (cams) {
+        camerasArriere = cams;
+        $('autre-camera').hidden = cams.length < 2;
+        if (!ANDROID || id || dejaCherche || cams.length < 2 || !flux) return;
+        // première ouverture sur Android : la caméra principale est en général « camera 0 »
+        var principale = cams.filter(function (d) { return /(^|\D)0\D*,?\s*facing back|camera2? 0\b/i.test(d.label); })[0];
+        var actuelle = piste && piste.getSettings ? piste.getSettings().deviceId : '';
+        if (principale && actuelle && principale.deviceId !== actuelle) {
+          arreterCamera(); demarrerCamera(principale.deviceId, true);
+        }
+      });
       var v = $('video');
       v.srcObject = s;
       var p = v.play(); if (p && p.catch) p.catch(function () {});
@@ -619,13 +646,30 @@
         if (caps.focusMode && caps.focusMode.indexOf('continuous') >= 0) {
           piste.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
         }
+        // Android : un léger zoom permet de tenir le téléphone plus loin, là où la mise au point se fait
+        if (ANDROID && caps.zoom && caps.zoom.max >= 2) {
+          piste.applyConstraints({ advanced: [{ zoom: Math.max(caps.zoom.min || 1, 2) }] }).catch(function () {});
+        }
       } catch (e) {}
       try {
         if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function (w) { verrouEcran = w; }).catch(function () {});
       } catch (e) {}
-      boucle();
-    }).catch(function (e) { cameraIndisponible(String(e && (e.name || e.message) || e)); });
+      boucle(++generation);
+    }).catch(function (e) {
+      // caméra retenue introuvable (autre téléphone, réglage effacé) : on repart sur le choix automatique
+      if (id) { cameraChoisie = ''; ecrire('camera', ''); demarrerCamera('', true); return; }
+      cameraIndisponible(String(e && (e.name || e.message) || e));
+    });
   }
+  $('autre-camera').onclick = function () {
+    if (camerasArriere.length < 2) return;
+    var actuelle = piste && piste.getSettings ? piste.getSettings().deviceId : '';
+    var i = camerasArriere.map(function (d) { return d.deviceId; }).indexOf(actuelle);
+    var suivante = camerasArriere[(i + 1) % camerasArriere.length];
+    cameraChoisie = suivante.deviceId; ecrire('camera', cameraChoisie);
+    arreterCamera(); demarrerCamera(cameraChoisie, true);
+    etat('', 'Caméra ' + ((i + 1) % camerasArriere.length + 1) + ' sur ' + camerasArriere.length, 'Garde celle où le QR code est net.');
+  };
   function cameraIndisponible(detail) {
     flux = null;
     $('lecteur').hidden = true;
