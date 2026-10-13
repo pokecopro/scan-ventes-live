@@ -103,6 +103,69 @@
   .mode[data-mode="listing"] { --c: #4f9cf5; }
   .mode[data-mode="stock"] { --c: #a78bfa; }
   .mode[data-mode="prix"] { --c: #f2b33d; }
+  .mode[data-mode="benefices"] { --c: #37c98b; }
+  /* --- ecran Benefices : calendrier des lives --- */
+  #ecran-benefices .filtres { display: flex; gap: 6px; overflow-x: auto; margin: 10px 0 12px; padding-bottom: 2px; }
+  #ecran-benefices .filtres::-webkit-scrollbar { display: none; }
+  #ecran-benefices .filtres button { font-size: 13px; padding: 7px 12px; white-space: nowrap; }
+  #ecran-benefices .filtres button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .cles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cles .large { grid-column: 1 / -1; }
+  .cle { background: var(--carte); border: 1px solid var(--trait); border-radius: 12px; padding: 10px 12px; }
+  .cle .lib { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--doux); font-weight: 600; }
+  .cle .val { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .cle.large .val { font-size: 30px; }
+  .cle .app { font-size: 13px; color: var(--doux); font-weight: 400; margin-left: 8px; }
+  .gain { color: var(--ok); } .perte { color: var(--erreur); }
+  .mois { background: var(--carte); border: 1px solid var(--trait); border-radius: 12px; padding: 12px 10px; margin-top: 12px; }
+  .mois h2 { font-size: 14px; font-weight: 600; margin: 0 2px 10px; display: flex; justify-content: space-between; align-items: baseline; }
+  .mois h2 .somme { font-variant-numeric: tabular-nums; }
+  .grille { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+  .jh { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--doux); text-align: center; padding-bottom: 3px; }
+  .case { min-width: 0; min-height: 58px; border: 1px solid var(--trait); border-radius: 7px; padding: 2px; background: var(--fond); display: flex; flex-direction: column; gap: 2px; }
+  .case.hors { background: transparent; border-color: transparent; }
+  .case .num { font-size: 10px; color: var(--doux); line-height: 1.1; padding-left: 2px; font-variant-numeric: tabular-nums; }
+  .case.auj .num { color: var(--accent); font-weight: 700; }
+  .puce { display: flex; align-items: center; border: 0; border-radius: 4px; padding: 0 1px; width: 100%;
+    font-size: 9.5px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.75; min-width: 0; }
+  .puce .ch { color: var(--doux); font-weight: 700; flex: none; margin-right: 1px; }
+  .puce .mt { font-weight: 700; white-space: nowrap; overflow: hidden; }
+  .puce.g { background: color-mix(in srgb, var(--ok) 20%, transparent); } .puce.g .mt { color: var(--ok); }
+  .puce.p { background: color-mix(in srgb, var(--erreur) 20%, transparent); } .puce.p .mt { color: var(--erreur); }
+  .puce.flou .mt { text-decoration: underline dotted; }
+  #benef-verrou { background: var(--carte); border: 1px solid var(--trait); border-radius: 12px; padding: 16px; margin-top: 14px; }
+  #benef-verrou p { color: var(--doux); font-size: 14px; margin: 0 0 12px; }
+  #benef-msg { font-size: 13px; color: var(--erreur); min-height: 18px; margin-top: 8px; }
+  #benef-chaines { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  #benef-chaines button { font-size: 13px; padding: 6px 12px; }
+  #benef-chaines button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  #benef-chaines button.vue { margin-left: auto; }
+  .bligne { background: var(--carte); border: 1px solid var(--trait); border-radius: 12px; padding: 10px 12px;
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; width: 100%; text-align: left; margin-bottom: 8px; }
+  .bligne .quand { font-size: 13px; color: var(--doux); font-variant-numeric: tabular-nums; }
+  .bligne .combien { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .bligne .quoi { grid-column: 1; font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bligne .det { grid-column: 1 / -1; font-size: 12px; color: var(--doux); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .bloc { background: var(--carte); border: 1px solid var(--trait); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .bloc h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .bloc .sous { font-size: 12px; color: var(--doux); margin: 0 0 10px; }
+  .bloc svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .duo .cle { margin: 0; }
+  .delta { font-size: 12px; font-weight: 600; }
+  .barres { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; font-size: 13px; }
+  .barres .piste { background: color-mix(in srgb, var(--trait) 60%, transparent); border-radius: 4px; height: 10px; }
+  .barres .piste > span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .barres .v { font-variant-numeric: tabular-nums; }
+  .jauge { height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--trait) 60%, transparent); overflow: hidden; margin-top: 8px; }
+  .jauge > span { display: block; height: 100%; background: var(--ok); }
+  .legende { display: flex; gap: 14px; font-size: 12px; color: var(--doux); margin-top: 8px; flex-wrap: wrap; }
+  .legende i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; font-style: normal; }
+  #fiche-benef { margin-top: 12px; }
+  #fiche-benef dl { display: grid; grid-template-columns: 1fr auto; gap: 0; margin: 0; }
+  #fiche-benef dt { font-size: 14px; color: var(--doux); padding: 6px 0; border-bottom: 1px solid var(--trait); }
+  #fiche-benef dd { margin: 0; padding: 6px 0; text-align: right; border-bottom: 1px solid var(--trait); font-variant-numeric: tabular-nums; font-size: 14px; }
+  #fiche-benef dt.gros, #fiche-benef dd.gros { font-weight: 700; border-bottom: 0; padding-top: 10px; font-size: 17px; }
   #ecran-menu h1 { font-size: 26px; letter-spacing: -.3px;
     background: linear-gradient(90deg, #4f9cf5, #a78bfa 55%, #f2b33d); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .retour { width: 100%; margin-top: 10px; }
@@ -119,8 +182,28 @@
     <button class="mode" data-mode="listing"><i><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></i><div><b>Listing</b><span>Scanner les cartes d'un stream et sortir le CSV Whatnot</span></div><em>›</em></button>
     <button class="mode" data-mode="stock"><i><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg></i><div><b>Inventaire</b><span>Faire entrer des cartes en stock</span></div><em>›</em></button>
     <button class="mode" data-mode="prix"><i><svg viewBox="0 0 24 24"><path d="M20.5 13.5l-7 7a2 2 0 0 1-2.8 0L3 12.8V4h8.8l8.7 8.7a2 2 0 0 1 0 .8zM7.5 8.5h.01"/></svg></i><div><b>Prix plancher</b><span>Scanner une carte pour savoir à partir de quel prix on gagne de l'argent</span></div><em>›</em></button>
+    <button class="mode" data-mode="benefices"><i><svg viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/></svg></i><div><b>Bénéfices</b><span>Le calendrier des lives et ce qu'ils ont rapporté</span></div><em>›</em></button>
   </div>
   <p class="aide" id="msg-menu"></p>
+</section>
+
+<section id="ecran-benefices" hidden>
+  <div class="entete"><b>Bénéfices</b><span class="compteur" id="benef-maj"></span></div>
+  <div id="benef-verrou" hidden>
+    <p>Cet espace est réservé. Tape le mot de passe des bénéfices pour l'ouvrir.</p>
+    <input type="password" id="benef-mdp" autocomplete="current-password" placeholder="Mot de passe">
+    <button class="principal" id="benef-ouvrir">Ouvrir</button>
+    <div id="benef-msg"></div>
+  </div>
+  <div id="benef-contenu" hidden>
+    <div class="filtres" id="benef-filtres"></div>
+    <div class="cles" id="benef-cles"></div>
+    <div id="benef-chaines"></div>
+    <div id="benef-corps"></div>
+    <div id="fiche-benef" hidden></div>
+    <button id="benef-oublier" style="width:100%;margin-top:14px;font-size:14px">Oublier le mot de passe sur ce téléphone</button>
+  </div>
+  <button class="retour" id="benef-retour">Retour au menu</button>
 </section>
 
 <section id="ecran-depart" hidden>
@@ -823,6 +906,7 @@
       var m = b.dataset.mode;
       session.code = code; session.mode = m;
       if (m === 'prix') { ouvrirPrix(); return; }
+      if (m === 'benefices') { ouvrirBenefices(); return; }
       $('msg-menu').textContent = '';
       $('titre-depart').textContent = MODES[m].titre;
       $('champs-live').hidden = (m === 'stock');
@@ -891,6 +975,439 @@
     $('ecran-menu').hidden = true; $('ecran-scan').hidden = false; $('lecteur').hidden = false;
     basculerNR(false);
     demarrerCamera();
+  }
+
+
+  // ---- Benefices : le calendrier des lives, lu dans l'onglet RENTA du Sheet ----
+  var benefLignes = [], benefPeriode = '30', benefOuvert = null, benefMdp = '';
+  var benefActives = null, benefVue = 'cal', benefDate = '';
+  var BMOIS = ['janvier','février','mars','avril','mai','juin','juillet','août',
+               'septembre','octobre','novembre','décembre'];
+  var BJOURS = ['lun','mar','mer','jeu','ven','sam','dim'];
+
+  function beur(n, signe) {
+    var v = Math.abs(Math.round(n)).toLocaleString('fr-FR');
+    return (n < 0 ? '−' : (signe ? '+' : '')) + v + ' €';
+  }
+  function bcourt(n) {
+    var a = Math.abs(n);
+    return (n < 0 ? '−' : '+') + (a >= 1000 ? (a / 1000).toFixed(1).replace('.', ',') + 'k'
+                                            : String(Math.round(a)));
+  }
+  function bpct(n) { return (n < 0 ? '−' : '') + Math.abs(n).toFixed(1).replace('.', ',') + ' %'; }
+  function bflou(d) { return d.ventes > 0 && d.sansprix / d.ventes >= 0.25; }
+
+  function ouvrirBenefices() {
+    ecrire('svl-code', session.code);
+    session.live = 'BENEFICES';
+    $('msg-menu').textContent = '';
+    $('ecran-menu').hidden = true; $('ecran-benefices').hidden = false;
+    benefOuvert = null; $('fiche-benef').hidden = true;
+    $('benef-msg').textContent = '';
+    var retenu = lire('svl-mdp-benef');
+    if (retenu) { benefCharger(retenu); return; }
+    $('benef-contenu').hidden = true;
+    $('benef-verrou').hidden = false;
+    $('benef-maj').textContent = '';
+    $('benef-mdp').value = '';
+    setTimeout(function () { $('benef-mdp').focus(); }, 80);
+  }
+
+  $('benef-ouvrir').onclick = function () {
+    var m = $('benef-mdp').value;
+    if (!m) { $('benef-msg').textContent = 'Il manque le mot de passe.'; return; }
+    benefCharger(m);
+  };
+  $('benef-mdp').onkeydown = function (e) { if (e.key === 'Enter') $('benef-ouvrir').click(); };
+  $('benef-oublier').onclick = function () {
+    try { localStorage.removeItem('svl-mdp-benef'); } catch (e) {}
+    benefMdp = '';
+    $('benef-contenu').hidden = true; $('benef-verrou').hidden = false;
+    $('benef-mdp').value = ''; $('benef-msg').textContent = '';
+  };
+
+  function benefCharger(mdp) {
+    benefMdp = mdp;
+    $('benef-verrou').hidden = true;
+    $('benef-contenu').hidden = false;
+    $('benef-cles').innerHTML = '';
+    $('benef-corps').innerHTML = '<div class="aide">Lecture des lives…</div>';
+    benefFiltres();
+    appeler('benefices', { mdp: mdp }).then(function (d) {
+      benefLignes = (d && d.lignes || []).filter(function (x) { return x && x.date; });
+      benefLignes.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+      benefDate = (d && d.maj) || '';
+      benefActives = null;
+      $('benef-maj').textContent = benefLignes.length + ' live' + (benefLignes.length > 1 ? 's' : '')
+        + (benefDate ? ' · ' + benefDate : '');
+      ecrire('svl-mdp-benef', mdp);
+      benefRendre();
+    }).catch(function (e) {
+      var m = String(e && e.message || e);
+      if (m.indexOf('MDP_BENEFICES_ABSENT') >= 0) {
+        $('benef-corps').innerHTML = '<div class="aide">Le mot de passe des bénéfices n\'est pas encore'
+          + ' enregistré côté serveur (propriété MDP_BENEFICES du script).</div>';
+        return;
+      }
+      if (m.indexOf('MDP_BENEFICES') >= 0) {
+        try { localStorage.removeItem('svl-mdp-benef'); } catch (x) {}
+        benefMdp = '';
+        $('benef-contenu').hidden = true; $('benef-verrou').hidden = false;
+        $('benef-mdp').value = '';
+        $('benef-msg').textContent = 'Mot de passe incorrect.';
+        return;
+      }
+      $('benef-corps').innerHTML = '<div class="aide">' +
+        (m.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect.'
+         : m.indexOf('INCONNU') >= 0 ? 'Le serveur ne connaît pas encore la fonction « benefices ».'
+         : 'Impossible de lire les bénéfices : ' + m) + '</div>';
+    });
+  }
+  $('benef-retour').onclick = function () {
+    $('ecran-benefices').hidden = true; $('ecran-menu').hidden = false;
+  };
+
+  function benefFiltres() {
+    var choix = [['7', '7 jours'], ['30', '30 jours'], ['90', '3 mois'], ['365', '12 mois'], ['tout', 'Tout']];
+    var z = $('benef-filtres');
+    z.innerHTML = '';
+    choix.forEach(function (c) {
+      var b = document.createElement('button');
+      b.textContent = c[1];
+      b.setAttribute('aria-pressed', c[0] === benefPeriode);
+      b.onclick = function () {
+        benefPeriode = c[0];
+        Array.prototype.forEach.call(z.children, function (x) { x.setAttribute('aria-pressed', x === b); });
+        benefOuvert = null; $('fiche-benef').hidden = true;
+        benefRendre();
+      };
+      z.appendChild(b);
+    });
+  }
+
+  function benefBarre() {
+    var z = $('benef-chaines');
+    var chs = [];
+    benefLignes.forEach(function (d) { if (chs.indexOf(d.chaine) < 0) chs.push(d.chaine); });
+    var ordre = ['MAIN', 'BIS', 'PROTECH', 'OSMO'];
+    chs.sort(function (a, b) {
+      var ia = ordre.indexOf(a), ib = ordre.indexOf(b);
+      return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib);
+    });
+    if (!benefActives) { benefActives = {}; chs.forEach(function (c) { benefActives[c] = true; }); }
+    z.innerHTML = '';
+    if (chs.length > 1) {
+      chs.forEach(function (c) {
+        var b = document.createElement('button');
+        b.textContent = c;
+        b.setAttribute('aria-pressed', !!benefActives[c]);
+        b.onclick = function () {
+          var restants = chs.filter(function (x) { return benefActives[x]; });
+          if (benefActives[c] && restants.length === 1) return;   // au moins une chaine
+          benefActives[c] = !benefActives[c];
+          b.setAttribute('aria-pressed', !!benefActives[c]);
+          benefOuvert = null; $('fiche-benef').hidden = true;
+          benefRendre();
+        };
+        z.appendChild(b);
+      });
+    }
+    var vues = [['cal', 'Calendrier'], ['liste', 'Liste'], ['bord', 'Tableau']];
+    vues.forEach(function (x, i) {
+      var v = document.createElement('button');
+      if (i === 0) v.className = 'vue';
+      v.textContent = x[1];
+      v.setAttribute('aria-pressed', benefVue === x[0]);
+      v.onclick = function () {
+        benefVue = x[0];
+        benefOuvert = null; $('fiche-benef').hidden = true;
+        benefRendre();
+      };
+      z.appendChild(v);
+    });
+  }
+
+  function benefRetenus() {
+    var L = benefLignes.filter(function (d) { return !benefActives || benefActives[d.chaine]; });
+    if (benefPeriode === 'tout') return L;
+    var lim = new Date();
+    lim.setDate(lim.getDate() - parseInt(benefPeriode, 10));
+    var iso = lim.getFullYear() + '-' + ('0' + (lim.getMonth() + 1)).slice(-2) + '-' + ('0' + lim.getDate()).slice(-2);
+    return L.filter(function (d) { return d.date >= iso; });
+  }
+
+  function benefRendre() {
+    benefBarre();
+    var L = benefRetenus();
+    var ca = 0, net = 0, be = 0, ve = 0;
+    L.forEach(function (d) { ca += d.ca; net += d.net; be += d.benef; ve += d.ventes; });
+    var caht = ca / 1.2, marge = caht ? be / caht * 100 : 0;
+    $('benef-cles').innerHTML =
+      '<div class="cle large"><div class="lib">Bénéfice net HT</div><div class="val ' + (be < 0 ? 'perte' : 'gain') + '">'
+      + beur(be, true) + '<span class="app">marge ' + bpct(marge) + '</span></div></div>'
+      + '<div class="cle"><div class="lib">Lives</div><div class="val">' + L.length + '</div></div>'
+      + '<div class="cle"><div class="lib">Ventes</div><div class="val">' + ve.toLocaleString('fr-FR') + '</div></div>'
+      + '<div class="cle large"><div class="lib">CA brut TTC</div><div class="val">' + beur(ca) + '</div></div>';
+
+    var corps = $('benef-corps');
+    if (!L.length) {
+      corps.innerHTML = '<div class="aide">' + (benefLignes.length
+        ? 'Aucun live sur cette période.'
+        : 'Aucun live calculé pour l\'instant. Ils arrivent du PC chaque matin.') + '</div>';
+      return;
+    }
+    if (benefVue === 'liste') { benefRendreListe(L, corps); return; }
+    if (benefVue === 'bord') { benefTableau(L, corps); return; }
+    var auj = aujourdhui();
+    var par = {};
+    L.forEach(function (d) { var k = d.date.slice(0, 7); (par[k] = par[k] || []).push(d); });
+    corps.innerHTML = Object.keys(par).sort().reverse().map(function (ym) {
+      var p = ym.split('-'), a = +p[0], m = +p[1];
+      var tot = par[ym].reduce(function (s, d) { return s + d.benef; }, 0);
+      var prem = new Date(a, m - 1, 1), nb = new Date(a, m, 0).getDate();
+      var cases = '';
+      for (var i = 0; i < (prem.getDay() + 6) % 7; i++) cases += '<div class="case hors"></div>';
+      for (var j = 1; j <= nb; j++) {
+        var iso = a + '-' + ('0' + m).slice(-2) + '-' + ('0' + j).slice(-2);
+        var puces = par[ym].filter(function (d) { return d.date === iso; }).map(function (d) {
+          return '<button class="puce ' + (d.benef < 0 ? 'p' : 'g') + (bflou(d) ? ' flou' : '')
+            + '" data-live="' + iso + '|' + d.chaine + '|' + encodeURIComponent(d.live || '') + '">'
+            + '<span class="ch">' + (d.chaine || '?').charAt(0) + '</span>'
+            + '<span class="mt">' + bcourt(d.benef) + '</span></button>';
+        }).join('');
+        cases += '<div class="case' + (iso === auj ? ' auj' : '') + '"><div class="num">' + j + '</div>' + puces + '</div>';
+      }
+      return '<section class="mois"><h2>' + BMOIS[m - 1] + ' ' + a
+        + '<span class="somme ' + (tot < 0 ? 'perte' : 'gain') + '">' + beur(tot, true) + '</span></h2>'
+        + '<div class="grille">' + BJOURS.map(function (x) { return '<div class="jh">' + x + '</div>'; }).join('')
+        + cases + '</div></section>';
+    }).join('');
+
+    Array.prototype.forEach.call(corps.querySelectorAll('[data-live]'), function (b) {
+      b.onclick = function () { benefFiche(b.dataset.live); };
+    });
+  }
+
+
+  // ---- Tableau de bord : les mêmes lives, vus de haut ----
+  function benefJours(L) {
+    // regroupe par jour, puis par semaine ou par mois si la periode est longue
+    var cle, lib, pas;
+    var span = 0;
+    if (L.length) {
+      var d1 = new Date(L[0].date), d2 = new Date(L[L.length - 1].date);
+      span = Math.round((d2 - d1) / 86400000);
+    }
+    if (span > 400) {
+      pas = 'mois';
+      cle = function (d) { return d.date.slice(0, 7); };
+      lib = function (k) { return BMOIS[+k.slice(5) - 1].slice(0, 4) + ' ' + k.slice(2, 4); };
+    } else if (span > 70) {
+      pas = 'semaine';
+      cle = function (d) {
+        var x = new Date(d.date); x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+        return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+      };
+      lib = function (k) { return k.slice(8) + '/' + k.slice(5, 7); };
+    } else {
+      pas = 'jour';
+      cle = function (d) { return d.date; };
+      lib = function (k) { return k.slice(8) + '/' + k.slice(5, 7); };
+    }
+    var par = {}, ordre = [];
+    L.forEach(function (d) {
+      var k = cle(d);
+      if (!par[k]) { par[k] = { k: k, lib: lib(k), benef: 0, ca: 0, lives: [] }; ordre.push(k); }
+      par[k].benef += d.benef; par[k].ca += d.ca; par[k].lives.push(d);
+    });
+    ordre.sort();
+    return { pas: pas, seaux: ordre.map(function (k) { return par[k]; }) };
+  }
+
+  function benefGraphe(seaux) {
+    if (!seaux.length) return '';
+    var H = 120, L0 = 0, large = 320, n = seaux.length;
+    var pas = large / n, ep = Math.max(3, Math.min(22, pas - 2));
+    var maxi = 0;
+    seaux.forEach(function (s) { maxi = Math.max(maxi, Math.abs(s.benef)); });
+    if (!maxi) maxi = 1;
+    var zero = H / 2 + 10;                      // la ligne du zero, au milieu
+    var ech = (H / 2) / maxi;
+    var hautMax = seaux.reduce(function (a, s) { return s.benef > a.benef ? s : a; }, seaux[0]);
+    var basMin = seaux.reduce(function (a, s) { return s.benef < a.benef ? s : a; }, seaux[0]);
+    var corps = '';
+    seaux.forEach(function (s, i) {
+      var x = i * pas + (pas - ep) / 2;
+      var h = Math.max(2, Math.abs(s.benef) * ech);
+      var y = s.benef >= 0 ? zero - h : zero;
+      var r = Math.min(4, ep / 2);
+      corps += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + ep.toFixed(1)
+        + '" height="' + h.toFixed(1) + '" rx="' + r + '" fill="' + (s.benef < 0 ? 'var(--erreur)' : 'var(--ok)')
+        + '"><title>' + s.lib + ' · ' + beur(s.benef, true) + '</title></rect>';
+    });
+    // on n'etiquette que les deux extremes, sinon c'est illisible
+    function etiq(s, dessus) {
+      var i = seaux.indexOf(s), x = i * pas + pas / 2;
+      var h = Math.abs(s.benef) * ech;
+      var y = dessus ? zero - h - 6 : zero + h + 14;
+      var anc = i < 2 ? 'start' : i > n - 3 ? 'end' : 'middle';
+      var dx = i < 2 ? -pas / 2 + 1 : i > n - 3 ? pas / 2 - 1 : 0;
+      return '<text x="' + (x + dx).toFixed(1) + '" y="' + y.toFixed(1) + '" text-anchor="' + anc
+        + '" fill="var(--doux)" font-size="10">' + beur(s.benef, true) + '</text>';
+    }
+    var axes = '<line x1="0" y1="' + zero + '" x2="' + large + '" y2="' + zero
+      + '" stroke="var(--trait)" stroke-width="1"/>';
+    var bas = '<text x="0" y="' + (H + 26) + '" fill="var(--doux)" font-size="10">' + seaux[0].lib + '</text>'
+      + (n > 1 ? '<text x="' + large + '" y="' + (H + 26) + '" text-anchor="end" fill="var(--doux)" font-size="10">'
+         + seaux[n - 1].lib + '</text>' : '');
+    return '<svg viewBox="-6 -8 ' + (large + 12) + ' ' + (H + 42) + '" role="img" aria-label="Bénéfice par période">'
+      + axes + corps + etiq(hautMax, true) + (basMin.benef < 0 ? etiq(basMin, false) : '') + bas + '</svg>';
+  }
+
+  function benefPrecedente(L) {
+    // meme duree, juste avant : sert a dire « mieux ou moins bien que la fois d'avant »
+    if (benefPeriode === 'tout' || !benefLignes.length) return null;
+    var n = parseInt(benefPeriode, 10);
+    var fin = new Date(); fin.setDate(fin.getDate() - n);
+    var deb = new Date(); deb.setDate(deb.getDate() - 2 * n);
+    function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+    var a = iso(deb), b = iso(fin);
+    var P = benefLignes.filter(function (d) {
+      return (!benefActives || benefActives[d.chaine]) && d.date >= a && d.date < b;
+    });
+    if (!P.length) return null;
+    var r = { benef: 0, ca: 0, lives: P.length };
+    P.forEach(function (d) { r.benef += d.benef; r.ca += d.ca; });
+    return r;
+  }
+
+  function benefEcart(av, ap) {
+    if (!av) return '';
+    if (!av && !ap) return '';
+    if (av === 0) return '';
+    var p = (ap - av) / Math.abs(av) * 100;
+    var cl = p >= 0 ? 'gain' : 'perte';
+    return '<span class="delta ' + cl + '">' + (p >= 0 ? '+' : '−')
+      + Math.abs(p).toFixed(0) + ' %</span>';
+  }
+
+  function benefTableau(L, corps) {
+    var ca = 0, be = 0, ve = 0, sp = 0;
+    L.forEach(function (d) { ca += d.ca; be += d.benef; ve += d.ventes; sp += d.sansprix; });
+    var caht = ca / 1.2;
+    var panier = ve ? ca / ve : 0;
+    var fiab = ve ? (ve - sp) / ve * 100 : 0;
+    var prec = benefPrecedente(L);
+    var groupe = benefJours(L), seaux = groupe.seaux;
+
+    var h = '';
+
+    h += '<div class="bloc"><h3>Bénéfice par ' + groupe.pas + '</h3>'
+      + '<p class="sous">Au-dessus de la ligne, un gain. En dessous, une perte.</p>'
+      + benefGraphe(seaux)
+      + '<div class="legende"><span><i style="background:var(--ok)"></i>Bénéfice</span>'
+      + '<span><i style="background:var(--erreur)"></i>Perte</span></div></div>';
+
+    h += '<div class="duo">'
+      + '<div class="cle"><div class="lib">Bénéfice</div><div class="val ' + (be < 0 ? 'perte' : 'gain') + '">'
+      + beur(be, true) + '</div>' + (prec ? '<div>' + benefEcart(prec.benef, be)
+      + '<span class="app">vs période précédente</span></div>' : '') + '</div>'
+      + '<div class="cle"><div class="lib">CA brut TTC</div><div class="val">' + beur(ca) + '</div>'
+      + (prec ? '<div>' + benefEcart(prec.ca, ca) + '<span class="app">vs précédente</span></div>' : '') + '</div>'
+      + '</div>';
+
+    h += '<div class="duo" style="margin-top:8px">'
+      + '<div class="cle"><div class="lib">Panier moyen</div><div class="val">' + beur(panier) + '</div></div>'
+      + '<div class="cle"><div class="lib">Marge</div><div class="val ' + (be < 0 ? 'perte' : 'gain') + '">'
+      + bpct(caht ? be / caht * 100 : 0) + '</div></div>'
+      + '</div>';
+
+    // par chaine, seulement si plusieurs
+    var parCh = {}, chs = [];
+    L.forEach(function (d) {
+      if (!parCh[d.chaine]) { parCh[d.chaine] = { benef: 0, ca: 0, lives: 0 }; chs.push(d.chaine); }
+      parCh[d.chaine].benef += d.benef; parCh[d.chaine].ca += d.ca; parCh[d.chaine].lives++;
+    });
+    if (chs.length > 1) {
+      var m = 0;
+      chs.forEach(function (c) { m = Math.max(m, Math.abs(parCh[c].benef)); });
+      chs.sort(function (a, b) { return parCh[b].benef - parCh[a].benef; });
+      h += '<div class="bloc" style="margin-top:10px"><h3>Par chaîne</h3>'
+        + '<p class="sous">Bénéfice net HT sur la période.</p><div class="barres">'
+        + chs.map(function (c) {
+            var v = parCh[c].benef, l = m ? Math.abs(v) / m * 100 : 0;
+            return '<span>' + c + '</span><span class="piste"><span style="width:' + l.toFixed(0)
+              + '%;background:' + (v < 0 ? 'var(--erreur)' : 'var(--ok)') + '"></span></span>'
+              + '<span class="v ' + (v < 0 ? 'perte' : 'gain') + '">' + beur(v, true) + '</span>';
+          }).join('') + '</div></div>';
+    }
+
+    // meilleur et pire live
+    if (L.length > 1) {
+      var mieux = L.reduce(function (a, d) { return d.benef > a.benef ? d : a; }, L[0]);
+      var pire = L.reduce(function (a, d) { return d.benef < a.benef ? d : a; }, L[0]);
+      function mini(d, titre) {
+        var p = d.date.split('-');
+        return '<div class="cle"><div class="lib">' + titre + '</div>'
+          + '<div class="val ' + (d.benef < 0 ? 'perte' : 'gain') + '" style="font-size:18px">'
+          + beur(d.benef, true) + '</div>'
+          + '<div class="app" style="margin:2px 0 0;display:block">' + p[2] + '/' + p[1] + ' · ' + d.chaine + '</div></div>';
+      }
+      h += '<div class="duo" style="margin-top:8px">' + mini(mieux, 'Meilleur live') + mini(pire, 'Moins bon') + '</div>';
+    }
+
+    // fiabilite du calcul
+    h += '<div class="bloc" style="margin-top:10px"><h3>Fiabilité du bénéfice</h3>'
+      + '<p class="sous">' + (ve - sp).toLocaleString('fr-FR') + ' ventes sur ' + ve.toLocaleString('fr-FR')
+      + ' ont un prix d\'achat connu. Le reste manque au coût, donc le bénéfice ci-dessus est un plafond.</p>'
+      + '<div class="jauge"><span style="width:' + fiab.toFixed(0) + '%"></span></div>'
+      + '<div class="legende"><span>' + fiab.toFixed(0) + ' % du coût d\'achat connu</span></div></div>';
+
+    corps.innerHTML = h;
+  }
+
+  function benefRendreListe(L, corps) {
+    corps.innerHTML = L.slice().reverse().map(function (d) {
+      var p = d.date.split('-');
+      return '<button class="bligne" data-live="' + d.date + '|' + d.chaine + '|'
+        + encodeURIComponent(d.live || '') + '">'
+        + '<span class="quand">' + p[2] + '/' + p[1] + ' · ' + d.chaine + '</span>'
+        + '<span class="combien ' + (d.benef < 0 ? 'perte' : 'gain') + '">'
+        + (bflou(d) ? '≈ ' : '') + beur(d.benef, true) + '</span>'
+        + '<span class="quoi">' + (d.live || 'live') + '</span>'
+        + '<span class="det">' + d.ventes + ' ventes · CA ' + beur(d.ca) + ' · marge ' + bpct(d.marge)
+        + (bflou(d) ? ' · ' + d.sansprix + ' sans prix' : '') + '</span></button>';
+    }).join('');
+    Array.prototype.forEach.call(corps.querySelectorAll('[data-live]'), function (b) {
+      b.onclick = function () { benefFiche(b.dataset.live); };
+    });
+  }
+
+  function benefFiche(cle) {
+    var p = cle.split('|'), live = decodeURIComponent(p[2] || '');
+    var d = null;
+    for (var i = 0; i < benefLignes.length; i++) {
+      var x = benefLignes[i];
+      if (x.date === p[0] && x.chaine === p[1] && (x.live || '') === live) { d = x; break; }
+    }
+    var f = $('fiche-benef');
+    if (!d || benefOuvert === cle) { benefOuvert = null; f.hidden = true; return; }
+    benefOuvert = cle;
+    var jma = d.date.split('-');
+    f.innerHTML = '<div id="etat" class="' + (d.benef < 0 ? 'erreur' : 'ok') + '">'
+      + '<div class="t">' + d.chaine + ' · ' + jma[2] + '/' + jma[1] + '/' + jma[0] + '</div>'
+      + '<div class="s">' + (d.live || 'live') + '</div></div>'
+      + '<dl>'
+      + '<dt>Ventes payantes</dt><dd>' + d.ventes + '</dd>'
+      + '<dt>CA brut TTC</dt><dd>' + beur(d.ca) + '</dd>'
+      + '<dt>CA net HT</dt><dd>' + beur(d.net) + '</dd>'
+      + '<dt>Coûts HT</dt><dd>−' + beur(Math.abs(d.couts)).replace('−', '') + '</dd>'
+      + '<dt>Marge</dt><dd>' + bpct(d.marge) + '</dd>'
+      + '<dt class="gros">Bénéfice net HT</dt><dd class="gros ' + (d.benef < 0 ? 'perte' : 'gain') + '">'
+      + (bflou(d) ? '≈ ' : '') + beur(d.benef, true) + '</dd></dl>'
+      + (bflou(d) ? '<div class="aide">' + d.sansprix + ' vente(s) sans prix d\'achat connu : ce bénéfice est un plafond, pas un résultat.</div>' : '');
+    f.hidden = false;
+    f.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   // ---- Rentabilité : ventes non réglées ----
