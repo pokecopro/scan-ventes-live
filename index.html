@@ -141,9 +141,9 @@
   <label for="precision" id="lib-precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
   <input id="precision" type="text" autocomplete="off">
   <div id="champ-enchere" hidden>
-    <label for="depart-num">Numéro de la dernière enchère du live</label>
-    <input id="depart-num" type="text" inputmode="numeric" autocomplete="off" placeholder="ex. 200">
-    <small>On scanne en partant de la fin : 200, 199, 198… Inutile si le live a déjà été commencé.</small>
+    <label for="depart-num">Numéro de la première enchère (facultatif)</label>
+    <input id="depart-num" type="text" inputmode="numeric" autocomplete="off" placeholder="1">
+    <small>On scanne dans l'ordre de passage : 1, 2, 3… Laisse vide pour commencer à 1. Un live déjà commencé reprend tout seul à la suite.</small>
   </div>
   <button class="principal" id="commencer">Commencer à scanner</button>
   <button class="retour" id="retour-menu">Retour</button>
@@ -207,7 +207,7 @@
   var PRIX_CADRE = 15;   // € HT, ajouté quand le code-barres d'un cadre est vu avec le QR code
   var fenetre = null;    // carte qui vient d'être lue : pendant un court instant on cherche le code-barres d'un cadre
   var modeNR = false;    // vrai quand on scanne les ventes non réglées
-  // Rentabilité : numéro de l'enchère Whatnot de la prochaine carte (on scanne du plus grand au plus petit).
+  // Rentabilité : numéro de l'enchère Whatnot de la prochaine carte (on scanne dans l'ordre de passage).
   // lot : plusieurs cartes vendues sur une seule enchère, elles prennent toutes le même numéro.
   var enchere = null, lot = null, departEnchere = null;
   var compteur = 0;      // nombre renvoyé par le Sheet (cartes de la session, ou cartes en stock)
@@ -368,7 +368,7 @@
     }
     if (session.mode === 'renta' && enchere !== null && !lot && enchere < 1) {
       bip(300, 0.25);
-      etat('alerte', 'Plus de numéro d\'enchère', 'Le n° 1 est déjà passé. Corrige avec le bouton +.');
+      etat('alerte', 'Numéro d\'enchère invalide', 'Corrige le numéro avec le bouton +.');
       return;
     }
     vus[cle] = true;
@@ -381,7 +381,7 @@
     if (session.mode === 'renta' && enchere !== null) {
       scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
       ligne.num = scan.num; ligne.lot = scan.lot;
-      if (lot) lot.n++; else enchere--;
+      if (lot) lot.n++; else enchere++;
       majEncheres();
     }
     lignes.unshift(ligne);
@@ -767,11 +767,11 @@
           note: x.note, envoi: false, num: x.num, nr: !!x.nr, cadre: !!x.cadre, lot: !!x.lot });
       });
       if (session.mode === 'renta') {
-        // la prochaine enchère est juste en dessous du plus petit numéro déjà scanné sur ce live
+        // la prochaine enchère suit le plus grand numéro déjà scanné sur ce live
         var nums = r.lignes.map(function (x) { return x.num; }).filter(function (n) { return n > 0; });
         if (lot && nums.indexOf(lot.num) < 0) lot = null;
-        enchere = nums.length ? Math.min.apply(null, nums) - 1 : departEnchere;
-        if (lot && lot.n) enchere = lot.num - 1;
+        enchere = nums.length ? Math.max.apply(null, nums) + 1 : departEnchere;
+        if (lot && lot.n) enchere = lot.num + 1;
         majEncheres();
       }
       afficherListe();
@@ -855,15 +855,12 @@
       live = $('chaine').value + ' ' + p[2] + '/' + p[1] + '/' + p[0] + (precision ? ' ' + precision : '');
     }
     var dep = parseInt($('depart-num').value.replace(/\D/g, ''), 10);
-    departEnchere = (m === 'renta' && dep > 0) ? dep : null;
+    departEnchere = m === 'renta' ? (dep > 0 ? dep : 1) : null;
     lot = null; enchere = null;
     $('commencer').disabled = true;
     $('msg-depart').textContent = 'Connexion…';
     session.live = live;
     chargerLive().then(function () {
-      if (m === 'renta' && enchere === null) {
-        throw new Error('Indique le numéro de la dernière enchère du live (le plus grand) : on scanne en partant de la fin.');
-      }
       ecrire('svl-code', session.code); ecrire('svl-chaine', $('chaine').value);
       $('total').parentNode.hidden = false; $('plancher').hidden = true;
       ['etat', 'envoi', 'btn-annuler', 'liste'].forEach(function (id) { $(id).hidden = false; });
@@ -929,7 +926,7 @@
       etat('', 'Lot ouvert sur l\'enchère n° ' + lot.num, 'Scanne toutes les cartes du lot, puis appuie sur « Fin du lot ».');
     } else {
       var fini = lot; lot = null;
-      if (fini.n) enchere = fini.num - 1;
+      if (fini.n) enchere = fini.num + 1;
       etat('ok', fini.n ? 'Lot n° ' + fini.num + ' : ' + fini.n + ' carte(s)' : 'Lot annulé (aucune carte)',
         'Prochaine enchère : n° ' + enchere);
     }
