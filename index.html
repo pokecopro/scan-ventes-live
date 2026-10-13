@@ -73,6 +73,14 @@
   li.nr .c small { text-decoration: none; color: var(--alerte); }
   #etapes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
   #etapes button { font-size: 14px; padding: 10px 8px; }
+  #champ-enchere small { display: block; color: var(--doux); font-size: 13px; margin-top: 4px; }
+  #encheres { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 8px 10px; border-radius: 12px;
+    background: var(--carte); border: 1px solid var(--trait); }
+  #encheres span { flex: 1; font-size: 15px; }
+  #encheres span b { font-size: 20px; }
+  #encheres button { padding: 8px 12px; min-width: 42px; }
+  #encheres.lot { border-color: #a78bfa; background: color-mix(in srgb, #a78bfa 18%, var(--carte)); }
+  #btn-lot.actif { background: #a78bfa; border-color: #a78bfa; color: #10151c; font-weight: 600; }
   #etape-1.actif { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   #etape-2.actif { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
   #lecteur.nr #viseur { border-color: var(--alerte); }
@@ -132,6 +140,11 @@
   </div>
   <label for="precision" id="lib-precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
   <input id="precision" type="text" autocomplete="off">
+  <div id="champ-enchere" hidden>
+    <label for="depart-num">Numéro de la dernière enchère du live</label>
+    <input id="depart-num" type="text" inputmode="numeric" autocomplete="off" placeholder="ex. 200">
+    <small>On scanne en partant de la fin : 200, 199, 198… Inutile si le live a déjà été commencé.</small>
+  </div>
   <button class="principal" id="commencer">Commencer à scanner</button>
   <button class="retour" id="retour-menu">Retour</button>
   <p class="aide" id="msg-depart"></p>
@@ -145,6 +158,12 @@
   <div id="etapes" hidden>
     <button id="etape-1" class="actif">1 · Toutes les cartes</button>
     <button id="etape-2">2 · Non régulés</button>
+  </div>
+  <div id="encheres" hidden>
+    <span id="enchere-txt"></span>
+    <button id="enchere-plus" aria-label="Numéro suivant">+</button>
+    <button id="enchere-moins" aria-label="Numéro précédent">−</button>
+    <button id="btn-lot">Lot</button>
   </div>
   <div id="lecteur">
     <video id="video" playsinline muted autoplay></video>
@@ -188,6 +207,9 @@
   var PRIX_CADRE = 15;   // € HT, ajouté quand le code-barres d'un cadre est vu avec le QR code
   var fenetre = null;    // carte qui vient d'être lue : pendant un court instant on cherche le code-barres d'un cadre
   var modeNR = false;    // vrai quand on scanne les ventes non réglées
+  // Rentabilité : numéro de l'enchère Whatnot de la prochaine carte (on scanne du plus grand au plus petit).
+  // lot : plusieurs cartes vendues sur une seule enchère, elles prennent toutes le même numéro.
+  var enchere = null, lot = null, departEnchere = null;
   var compteur = 0;      // nombre renvoyé par le Sheet (cartes de la session, ou cartes en stock)
   var MODES = {
     renta: { titre: 'Rentabilité', unite: 'vendue(s)', date: 'Date du live' },
@@ -262,7 +284,7 @@
       var n = document.createElement('span'); n.className = 'n'; n.textContent = l.num || '…';
       var c = document.createElement('span'); c.className = 'c';
       c.textContent = l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : 'Carte à compléter';
-      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert + (l.cadre ? ' · cadre' : '') + (l.nr ? ' · non régulé' : '');
+      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert + (l.lot ? ' · lot' : '') + (l.cadre ? ' · cadre' : '') + (l.nr ? ' · non régulé' : '');
       c.appendChild(p);
       var g = document.createElement('span'); g.className = 'g';
       g.textContent = prefixe(l.gradateur) + (l.note ? ' ' + l.note : '');
@@ -344,6 +366,11 @@
         (deja && deja.carte ? deja.carte + ' · ' : '') + 'certificat ' + a.cert);
       return;
     }
+    if (session.mode === 'renta' && enchere !== null && !lot && enchere < 1) {
+      bip(300, 0.25);
+      etat('alerte', 'Plus de numéro d\'enchère', 'Le n° 1 est déjà passé. Corrige avec le bouton +.');
+      return;
+    }
     vus[cle] = true;
     bip(900, 0.08);
     $('lecteur').classList.add('flash');
@@ -351,6 +378,12 @@
 
     var ligne = { cle: cle, gradateur: a.gradateur, cert: a.cert, carte: '', numero: '', note: '', envoi: true, num: 0 };
     var scan = { texte: texte, ligne: ligne, info: null, pret: false };
+    if (session.mode === 'renta' && enchere !== null) {
+      scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
+      ligne.num = scan.num; ligne.lot = scan.lot;
+      if (lot) lot.n++; else enchere--;
+      majEncheres();
+    }
     lignes.unshift(ligne);
     file.push(scan);
     afficherListe();
@@ -482,7 +515,7 @@
     enCours = true;
     appeler('enregistrerLot', {
       nonRegle: nr,
-      scans: lot.map(function (s) { return { texte: s.texte, cadre: s.cadre || '' }; })
+      scans: lot.map(function (s) { return { texte: s.texte, cadre: s.cadre || '', num: s.num || 0, lot: !!s.lot }; })
     }).then(function (rep) {
       var res = rep.resultats || [];
       compteur = rep.compteur;
@@ -731,8 +764,16 @@
         // en stock, c'est le Sheet qui répond « déjà en stock » ou « déjà vendue sur … »
         if (session.mode !== 'stock') vus[cle] = true;
         lignes.unshift({ cle: cle, gradateur: x.gradateur, cert: x.cert, carte: x.carte, numero: x.numero,
-          note: x.note, envoi: false, num: x.num, nr: !!x.nr, cadre: !!x.cadre });
+          note: x.note, envoi: false, num: x.num, nr: !!x.nr, cadre: !!x.cadre, lot: !!x.lot });
       });
+      if (session.mode === 'renta') {
+        // la prochaine enchère est juste en dessous du plus petit numéro déjà scanné sur ce live
+        var nums = r.lignes.map(function (x) { return x.num; }).filter(function (n) { return n > 0; });
+        if (lot && nums.indexOf(lot.num) < 0) lot = null;
+        enchere = nums.length ? Math.min.apply(null, nums) - 1 : departEnchere;
+        if (lot && lot.n) enchere = lot.num - 1;
+        majEncheres();
+      }
       afficherListe();
     });
   }
@@ -793,6 +834,7 @@
         ? 'Lot (facultatif, ex. Retour PCA boîte 12)'
         : 'Précision (facultatif, ex. 17h ou GRADEE JAP)';
       $('precision').value = '';
+      $('champ-enchere').hidden = (m !== 'renta'); $('depart-num').value = '';
       $('msg-depart').textContent = '';
       $('ecran-menu').hidden = true; $('ecran-depart').hidden = false;
     };
@@ -812,17 +854,23 @@
       var p = date.split('-');
       live = $('chaine').value + ' ' + p[2] + '/' + p[1] + '/' + p[0] + (precision ? ' ' + precision : '');
     }
+    var dep = parseInt($('depart-num').value.replace(/\D/g, ''), 10);
+    departEnchere = (m === 'renta' && dep > 0) ? dep : null;
+    lot = null; enchere = null;
     $('commencer').disabled = true;
     $('msg-depart').textContent = 'Connexion…';
     session.live = live;
     chargerLive().then(function () {
+      if (m === 'renta' && enchere === null) {
+        throw new Error('Indique le numéro de la dernière enchère du live (le plus grand) : on scanne en partant de la fin.');
+      }
       ecrire('svl-code', session.code); ecrire('svl-chaine', $('chaine').value);
       $('total').parentNode.hidden = false; $('plancher').hidden = true;
       ['etat', 'envoi', 'btn-annuler', 'liste'].forEach(function (id) { $(id).hidden = false; });
       $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock' ? (precision || 'stock') : live);
       $('unite').textContent = MODES[m].unite;
       $('btn-csv').hidden = (m !== 'listing'); $('msg-csv').textContent = '';
-      $('etapes').hidden = (m !== 'renta'); basculerNR(false);
+      $('etapes').hidden = (m !== 'renta'); basculerNR(false); majEncheres();
       $('ecran-depart').hidden = true; $('ecran-scan').hidden = false;
       $('lecteur').hidden = false;
       etat('', 'Vise le QR code d\'un boîtier', 'La carte s\'enregistre toute seule.');
@@ -854,7 +902,39 @@
     $('etape-1').classList.toggle('actif', !actif);
     $('etape-2').classList.toggle('actif', actif);
     $('lecteur').classList.toggle('nr', actif);
+    majEncheres();
   }
+  function majEncheres() {
+    var visible = session.mode === 'renta' && session.live !== 'PRIX' && !modeNR && enchere !== null;
+    $('encheres').hidden = !visible;
+    if (!visible) return;
+    $('encheres').classList.toggle('lot', !!lot);
+    $('btn-lot').classList.toggle('actif', !!lot);
+    $('btn-lot').textContent = lot ? 'Fin du lot' : 'Lot';
+    $('enchere-txt').innerHTML = lot
+      ? 'Lot · enchère <b>n° ' + lot.num + '</b> · ' + lot.n + ' carte(s)'
+      : 'Prochaine enchère : <b>n° ' + enchere + '</b>';
+  }
+  $('enchere-plus').onclick = function () {
+    if (lot && !lot.n) { lot.num++; enchere = lot.num; } else if (!lot) enchere++;
+    majEncheres();
+  };
+  $('enchere-moins').onclick = function () {
+    if (lot && !lot.n) { if (lot.num > 1) { lot.num--; enchere = lot.num; } } else if (!lot && enchere > 1) enchere--;
+    majEncheres();
+  };
+  $('btn-lot').onclick = function () {
+    if (!lot) {
+      lot = { num: enchere, n: 0 };
+      etat('', 'Lot ouvert sur l\'enchère n° ' + lot.num, 'Scanne toutes les cartes du lot, puis appuie sur « Fin du lot ».');
+    } else {
+      var fini = lot; lot = null;
+      if (fini.n) enchere = fini.num - 1;
+      etat('ok', fini.n ? 'Lot n° ' + fini.num + ' : ' + fini.n + ' carte(s)' : 'Lot annulé (aucune carte)',
+        'Prochaine enchère : n° ' + enchere);
+    }
+    majEncheres();
+  };
   $('etape-1').onclick = function () {
     basculerNR(false);
     etat('', 'Étape 1 : scanne toutes les cartes du live', 'Chaque carte scannée est comptée comme vendue.');
