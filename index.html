@@ -909,8 +909,8 @@
     $('btn-lot').classList.toggle('actif', !!lot);
     $('btn-lot').textContent = lot ? 'Fin du lot' : 'Lot';
     $('enchere-txt').innerHTML = lot
-      ? 'Lot · enchère <b>n° ' + lot.num + '</b> · ' + lot.n + ' carte(s)'
-      : 'Prochaine enchère : <b>n° ' + enchere + '</b>';
+      ? 'Enchère <b>#' + lot.num + '</b> (lot) · ' + lot.n + ' carte(s)'
+      : 'Prochaine enchère : <b>#' + enchere + '</b>';
   }
   $('enchere-plus').onclick = function () {
     if (lot && !lot.n) { lot.num++; enchere = lot.num; } else if (!lot) enchere++;
@@ -923,12 +923,12 @@
   $('btn-lot').onclick = function () {
     if (!lot) {
       lot = { num: enchere, n: 0 };
-      etat('', 'Lot ouvert sur l\'enchère n° ' + lot.num, 'Scanne toutes les cartes du lot, puis appuie sur « Fin du lot ».');
+      etat('', 'Enchère #' + lot.num + ' : lot',  'Scanne toutes les cartes du lot, puis appuie sur « Fin du lot ».');
     } else {
       var fini = lot; lot = null;
       if (fini.n) enchere = fini.num + 1;
-      etat('ok', fini.n ? 'Lot n° ' + fini.num + ' : ' + fini.n + ' carte(s)' : 'Lot annulé (aucune carte)',
-        'Prochaine enchère : n° ' + enchere);
+      etat('ok', fini.n ? 'Enchère #' + fini.num + ' (lot) : ' + fini.n + ' carte(s)' : 'Lot annulé (aucune carte)',
+        'Prochaine enchère : #' + enchere);
     }
     majEncheres();
   };
