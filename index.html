@@ -1491,7 +1491,9 @@
   function estCadreCatalogue(l) { return /^CADRE-/.test(l.cert || '') || l.cert === 'cadre'; }
   function numerosCadres() {
     var t = {};
-    lignes.forEach(function (l) { if (l.num > 0 && estCadreCatalogue(l)) t[l.num] = true; });
+    var cartes = {};
+    lignes.forEach(function (l) { if (l.num > 0 && !estCadreCatalogue(l)) cartes[l.num] = true; });
+    lignes.forEach(function (l) { if (l.num > 0 && estCadreCatalogue(l) && !cartes[l.num]) t[l.num] = true; });
     return t;
   }
   // Prochain numéro libre à partir de n : on saute les enchères déjà prises par un cadre.
@@ -1586,6 +1588,8 @@
     if (p.hidden) return;
     $('cadre-recherche').value = '';
     cadreChoisi = null; $('cadre-num').value = ''; finCadreLot(true);
+    // « Lot » appuyé juste avant « Cadre » : c'est un lot de cadres, le numéro tapé dans le panneau sera pris
+    if (lot && !lot.n) { lot = null; cadreLot = { num: 0, n: 0 }; majEncheres(); majCadreLot(); }
     if (catalogue) { remplirCadres(); chargerImages(); return; }
     $('cadre-msg').textContent = 'Chargement du catalogue…';
     appeler('catalogueCadres').then(function (r) { catalogue = r.cadres || []; remplirCadres(); chargerImages(); })
@@ -1597,7 +1601,7 @@
   var cadreLot = null;   // { num, n } tant que le lot de cadres est ouvert
   function majCadreLot() {
     var actif = !!cadreLot;
-    $('cadre-lot').hidden = !!lot;   // pendant un lot du scan, les cadres vont déjà dans ce lot
+    $('cadre-lot').hidden = !!(lot && lot.n);   // lot du scan déjà commencé : les cadres sans numéro y vont
     $('cadre-lot').classList.toggle('actif', actif);
     $('cadre-lot').textContent = actif ? 'Fin du lot' : 'Lot';
     $('panneau-cadre').classList.toggle('lot', actif);
@@ -1628,8 +1632,12 @@
     var saisi = parseInt($('cadre-num').value.replace(/\D/g, ''), 10);
     if ($('cadre-num').value.trim() && !(saisi > 0)) { $('cadre-msg').textContent = 'Numéro d\'enchère invalide.'; return; }
     var num = saisi > 0 ? saisi : null;
-    if (cadreLot && !lot) {
-      if (!num) num = cadreLot.num || enchere;
+    // Lot du scan encore vide + numéro tapé : le numéro tapé l'emporte, on passe en lot de cadres sur ce numéro
+    if (lot && !lot.n && num && num !== lot.num) { lot = null; if (!cadreLot) cadreLot = { num: 0, n: 0 }; majEncheres(); majCadreLot(); }
+    var lotScan = !!lot && (!num || num === lot.num);    // le cadre rejoint le lot du scan en cours
+    var lotCadres = !lotScan && !!(cadreLot || lot);     // lot de cadres sur le numéro tapé
+    if (lotCadres) {
+      if (!num) num = (cadreLot && cadreLot.num) || enchere;
       if (!num) { $('cadre-msg').textContent = 'Tape le numéro d\'enchère du lot.'; return; }
       // un lot de cadres peut rejoindre un cadre déjà saisi seul sur ce numéro, pas une carte scannée
       if (lignes.some(function (l) { return l.num === num && !estCadreCatalogue(l); })) {
@@ -1637,7 +1645,7 @@
         $('cadre-msg').textContent = 'L\'enchère #' + num + ' a déjà une carte scannée. Vérifie le numéro.';
         return;
       }
-    } else if (num && !lot && lignes.some(function (l) { return l.num === num; })) {
+    } else if (!lotScan && num && lignes.some(function (l) { return l.num === num; })) {
       bip(300, 0.25);
       $('cadre-msg').textContent = 'L\'enchère #' + num + ' est déjà saisie. Vérifie le numéro (ou utilise Lot).';
       return;
@@ -1646,14 +1654,17 @@
     var ligne = { cle: 'cadre ' + Date.now(), gradateur: 'CollectAura', cert: 'cadre', carte: c.carte, numero: c.numero,
       note: '', envoi: true, num: 0, cadre: true };
     var scan = { cadreCatalogue: { carte: c.carte, numero: c.numero, extension: c.extension, yen: c.yen }, ligne: ligne, pret: true };
-    if (num && !lot) {
+    if (lotScan) {
+      scan.num = lot.num; scan.lot = true;
+      ligne.num = lot.num; ligne.lot = true;
+      lot.n++;
+    } else if (num) {
       // cadre saisi avec son propre numéro : le compteur des autres cartes ne bouge pas, il sautera ce numéro
-      scan.num = num; scan.lot = !!cadreLot;
-      ligne.num = num; ligne.lot = !!cadreLot;
+      scan.num = num; scan.lot = lotCadres;
+      ligne.num = num; ligne.lot = lotCadres;
     } else if (enchere !== null) {
-      scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
-      ligne.num = scan.num; ligne.lot = scan.lot;
-      if (lot) lot.n++;
+      scan.num = enchere; scan.lot = false;
+      ligne.num = enchere; ligne.lot = false;
     }
     bip(900, 0.08);
     lignes.unshift(ligne); file.push(scan);
@@ -1662,7 +1673,7 @@
     etat('', (c.carte + ' ' + c.numero).trim() + ' (cadre)', 'Enchère #' + ligne.num + ' · enregistrement…');
     // le panneau reste ouvert pour enchaîner les cadres suivants
     $('cadre-recherche').value = '';
-    if (cadreLot && !lot) {
+    if (cadreLot && lotCadres) {
       cadreLot.num = ligne.num; cadreLot.n++;
       $('cadre-num').value = ligne.num;   // le numéro reste celui du lot
       majCadreLot();
