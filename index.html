@@ -25,6 +25,11 @@
   button.principal { background: var(--accent); border-color: var(--accent); color: #fff;
     font-weight: 600; width: 100%; margin-top: 18px; padding: 14px; }
   button:disabled { opacity: .5; }
+  /* retour visuel quand on touche un bouton : il s'enfonce, s'éclaire et s'entoure d'un halo */
+  button, .cadre-carte { -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    transition: transform .09s ease-out, filter .09s ease-out, box-shadow .2s ease-out; }
+  button.appuye, .cadre-carte.appuye { transform: scale(.93); filter: brightness(1.4);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 60%, transparent); transition-duration: .04s; }
   [hidden] { display: none !important; }
   .entete { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
   .entete b { font-size: 15px; }
@@ -95,6 +100,11 @@
   .cadre-carte b { font-weight: 600; word-break: break-word; }
   .cadre-carte small { opacity: .7; font-size: 10px; }
   #panneau-cadre .ligne { display: flex; gap: 8px; }
+  #panneau-cadre .num-lot { display: flex; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+  #panneau-cadre .num-lot input { margin-bottom: 0; flex: 1; }
+  #cadre-lot { flex: 0 0 auto; padding: 8px 14px; }
+  #cadre-lot.actif { background: #a78bfa; border-color: #a78bfa; color: #10151c; font-weight: 600; }
+  #panneau-cadre.lot { border-color: #a78bfa; }
   #panneau-cadre .ligne button { flex: 1; }
   #btn-cadre { background: color-mix(in srgb, #f2b33d 25%, var(--carte)); border-color: #f2b33d; }
   #btn-lot.actif { background: #a78bfa; border-color: #a78bfa; color: #10151c; font-weight: 600; }
@@ -108,7 +118,7 @@
     border-color: color-mix(in srgb, var(--c) 35%, var(--trait));
     background: linear-gradient(100deg, color-mix(in srgb, var(--c) 16%, var(--carte)), var(--carte) 62%); }
   .mode::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
-  .mode:active { transform: scale(.985); }
+  .mode.appuye { transform: scale(.95); }
   .mode i { flex: none; width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
     background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c); }
   .mode i svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -268,7 +278,10 @@
   </div>
   <div id="panneau-cadre" hidden>
     <label for="cadre-num" class="aide" style="display:block;margin:0 0 4px">Numéro d'enchère du cadre</label>
-    <input id="cadre-num" type="text" inputmode="numeric" autocomplete="off" placeholder="ex. 158">
+    <div class="num-lot">
+      <input id="cadre-num" type="text" inputmode="numeric" autocomplete="off" placeholder="ex. 158">
+      <button id="cadre-lot" type="button">Lot</button>
+    </div>
     <input id="cadre-recherche" type="search" autocomplete="off" placeholder="Rechercher : nom, numéro ou extension">
     <div id="cadre-liste" role="listbox" aria-label="Cartes en cadre"></div>
     <div class="ligne">
@@ -315,6 +328,26 @@
   var API = 'https://script.google.com/macros/s/AKfycbxbnc8tY2wrOsmH5IAmXWQvmsiZNlMN0fhgiwbUZ52pnTXY4gOPIdgNjgGz5NpR6U15/exec';
 
   var $ = function (id) { return document.getElementById(id); };
+  // Chaque bouton touché montre qu'il a bien été pris en compte (et vibre brièvement sur Android).
+  (function () {
+    var actif = null, depuis = 0, minuterie = null;
+    function relacher() {
+      if (!actif) return;
+      var b = actif; actif = null;
+      clearTimeout(minuterie);
+      minuterie = setTimeout(function () { b.classList.remove('appuye'); }, Math.max(0, 160 - (Date.now() - depuis)));
+    }
+    document.addEventListener('pointerdown', function (e) {
+      var b = e.target.closest && e.target.closest('button, .cadre-carte');
+      if (!b || b.disabled) return;
+      if (actif && actif !== b) actif.classList.remove('appuye');
+      clearTimeout(minuterie);
+      actif = b; depuis = Date.now();
+      b.classList.add('appuye');
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
+    }, { passive: true });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) { document.addEventListener(t, relacher, { passive: true }); });
+  })();
   var session = { code: '', live: '', mode: 'renta' };
   var PRIX_CADRE = 15;   // € HT, ajouté quand le code-barres d'un cadre est vu avec le QR code
   var fenetre = null;    // carte qui vient d'être lue : pendant un court instant on cherche le code-barres d'un cadre
@@ -1552,14 +1585,42 @@
     p.hidden = !p.hidden;
     if (p.hidden) return;
     $('cadre-recherche').value = '';
-    cadreChoisi = null; $('cadre-num').value = '';
+    cadreChoisi = null; $('cadre-num').value = ''; finCadreLot(true);
     if (catalogue) { remplirCadres(); chargerImages(); return; }
     $('cadre-msg').textContent = 'Chargement du catalogue…';
     appeler('catalogueCadres').then(function (r) { catalogue = r.cadres || []; remplirCadres(); chargerImages(); })
       .catch(function (e) { $('cadre-msg').textContent = 'Catalogue illisible : ' + String(e && e.message || e); });
   };
   $('cadre-recherche').oninput = remplirCadres;
-  $('cadre-fermer').onclick = function () { $('panneau-cadre').hidden = true; };
+  $('cadre-fermer').onclick = function () { finCadreLot(true); $('panneau-cadre').hidden = true; };
+  // ---- plusieurs cadres vendus sur une même enchère ----
+  var cadreLot = null;   // { num, n } tant que le lot de cadres est ouvert
+  function majCadreLot() {
+    var actif = !!cadreLot;
+    $('cadre-lot').hidden = !!lot;   // pendant un lot du scan, les cadres vont déjà dans ce lot
+    $('cadre-lot').classList.toggle('actif', actif);
+    $('cadre-lot').textContent = actif ? 'Fin du lot' : 'Lot';
+    $('panneau-cadre').classList.toggle('lot', actif);
+    $('cadre-num').readOnly = !!(cadreLot && cadreLot.n);
+    $('cadre-num').placeholder = actif ? 'Numéro du lot, ex. 56' : 'ex. 158';
+  }
+  function finCadreLot(silence) {
+    var fini = cadreLot; cadreLot = null;
+    if (!silence && fini) $('cadre-num').value = '';
+    majCadreLot();
+    return fini;
+  }
+  $('cadre-lot').onclick = function () {
+    if (!cadreLot) {
+      cadreLot = { num: 0, n: 0 };
+      majCadreLot();
+      $('cadre-msg').textContent = 'Lot de cadres : tape le numéro d\'enchère, puis ajoute les cadres un par un.';
+      $('cadre-num').focus();
+    } else {
+      var fini = finCadreLot(false);
+      $('cadre-msg').textContent = fini.n ? 'Enchère #' + fini.num + ' (lot) : ' + fini.n + ' cadre(s).' : 'Lot de cadres annulé.';
+    }
+  };
   $('cadre-ok').onclick = function () {
     var i = cadreChoisi;
     if (i === null || !catalogue) { $('cadre-msg').textContent = 'Touche d\'abord une carte dans la liste.'; return; }
@@ -1567,7 +1628,16 @@
     var saisi = parseInt($('cadre-num').value.replace(/\D/g, ''), 10);
     if ($('cadre-num').value.trim() && !(saisi > 0)) { $('cadre-msg').textContent = 'Numéro d\'enchère invalide.'; return; }
     var num = saisi > 0 ? saisi : null;
-    if (num && !lot && lignes.some(function (l) { return l.num === num && !l.lot; })) {
+    if (cadreLot && !lot) {
+      if (!num) num = cadreLot.num || enchere;
+      if (!num) { $('cadre-msg').textContent = 'Tape le numéro d\'enchère du lot.'; return; }
+      // un lot de cadres peut rejoindre un cadre déjà saisi seul sur ce numéro, pas une carte scannée
+      if (lignes.some(function (l) { return l.num === num && !estCadreCatalogue(l); })) {
+        bip(300, 0.25);
+        $('cadre-msg').textContent = 'L\'enchère #' + num + ' a déjà une carte scannée. Vérifie le numéro.';
+        return;
+      }
+    } else if (num && !lot && lignes.some(function (l) { return l.num === num; })) {
       bip(300, 0.25);
       $('cadre-msg').textContent = 'L\'enchère #' + num + ' est déjà saisie. Vérifie le numéro (ou utilise Lot).';
       return;
@@ -1578,8 +1648,8 @@
     var scan = { cadreCatalogue: { carte: c.carte, numero: c.numero, extension: c.extension, yen: c.yen }, ligne: ligne, pret: true };
     if (num && !lot) {
       // cadre saisi avec son propre numéro : le compteur des autres cartes ne bouge pas, il sautera ce numéro
-      scan.num = num; scan.lot = false;
-      ligne.num = num; ligne.lot = false;
+      scan.num = num; scan.lot = !!cadreLot;
+      ligne.num = num; ligne.lot = !!cadreLot;
     } else if (enchere !== null) {
       scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
       ligne.num = scan.num; ligne.lot = scan.lot;
@@ -1591,9 +1661,18 @@
     majEncheres();
     etat('', (c.carte + ' ' + c.numero).trim() + ' (cadre)', 'Enchère #' + ligne.num + ' · enregistrement…');
     // le panneau reste ouvert pour enchaîner les cadres suivants
-    $('cadre-num').value = ''; $('cadre-recherche').value = '';
-    remplirCadres();
-    $('cadre-msg').textContent = 'Cadre #' + ligne.num + ' ajouté. Ajoute le suivant, ou « Fermer » pour scanner les autres cartes.';
+    $('cadre-recherche').value = '';
+    if (cadreLot && !lot) {
+      cadreLot.num = ligne.num; cadreLot.n++;
+      $('cadre-num').value = ligne.num;   // le numéro reste celui du lot
+      majCadreLot();
+      remplirCadres();
+      $('cadre-msg').textContent = 'Enchère #' + ligne.num + ' (lot) : ' + cadreLot.n + ' cadre(s). Ajoute le suivant, ou « Fin du lot ».';
+    } else {
+      $('cadre-num').value = '';
+      remplirCadres();
+      $('cadre-msg').textContent = 'Cadre #' + ligne.num + ' ajouté. Ajoute le suivant, ou « Fermer » pour scanner les autres cartes.';
+    }
     afficherListe(); vider();
   };
   $('btn-lot').onclick = function () {
