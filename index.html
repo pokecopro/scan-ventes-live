@@ -267,6 +267,8 @@
     <button id="btn-cadre">Cadre</button>
   </div>
   <div id="panneau-cadre" hidden>
+    <label for="cadre-num" class="aide" style="display:block;margin:0 0 4px">Numéro d'enchère du cadre</label>
+    <input id="cadre-num" type="text" inputmode="numeric" autocomplete="off" placeholder="ex. 158">
     <input id="cadre-recherche" type="search" autocomplete="off" placeholder="Rechercher : nom, numéro ou extension">
     <div id="cadre-liste" role="listbox" aria-label="Cartes en cadre"></div>
     <div class="ligne">
@@ -493,7 +495,7 @@
     if (session.mode === 'renta' && enchere !== null) {
       scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
       ligne.num = scan.num; ligne.lot = scan.lot;
-      if (lot) lot.n++; else enchere++;
+      if (lot) lot.n++; else enchere = suivante(enchere + 1);
       majEncheres();
     }
     lignes.unshift(ligne);
@@ -882,10 +884,13 @@
       });
       if (session.mode === 'renta') {
         // la prochaine enchère suit le plus grand numéro déjà scanné sur ce live
+        // les cadres saisis à l'avance avec leur numéro ne comptent pas : on suit les cartes scannées
         var nums = r.lignes.map(function (x) { return x.num; }).filter(function (n) { return n > 0; });
+        var scannes = r.lignes.filter(function (x) { return x.num > 0 && !estCadreCatalogue(x); })
+          .map(function (x) { return x.num; });
         if (lot && nums.indexOf(lot.num) < 0) lot = null;
-        enchere = nums.length ? Math.max.apply(null, nums) + 1 : departEnchere;
-        if (lot && lot.n) enchere = lot.num + 1;
+        enchere = suivante(scannes.length ? Math.max.apply(null, scannes) + 1 : departEnchere);
+        if (lot && lot.n) enchere = suivante(lot.num + 1);
         majEncheres();
       }
       afficherListe();
@@ -1449,6 +1454,20 @@
     $('lecteur').classList.toggle('nr', actif);
     majEncheres();
   }
+  // Cadre choisi dans le catalogue (QR non scanné) : son numéro d'enchère est saisi à la main.
+  function estCadreCatalogue(l) { return /^CADRE-/.test(l.cert || '') || l.cert === 'cadre'; }
+  function numerosCadres() {
+    var t = {};
+    lignes.forEach(function (l) { if (l.num > 0 && estCadreCatalogue(l)) t[l.num] = true; });
+    return t;
+  }
+  // Prochain numéro libre à partir de n : on saute les enchères déjà prises par un cadre.
+  function suivante(n) {
+    if (n === null || n === undefined) return n;
+    var pris = numerosCadres();
+    while (pris[n]) n++;
+    return n;
+  }
   function majEncheres() {
     var visible = session.mode === 'renta' && session.live !== 'PRIX' && !modeNR && enchere !== null;
     $('encheres').hidden = !visible;
@@ -1459,13 +1478,20 @@
     $('enchere-txt').innerHTML = lot
       ? 'Enchère <b>#' + lot.num + '</b> (lot) · ' + lot.n + ' carte(s)'
       : 'Prochaine enchère : <b>#' + enchere + '</b>';
+    var pris = Object.keys(numerosCadres()).map(Number).sort(function (a, b) { return a - b; });
+    if (pris.length) $('enchere-txt').innerHTML += '<br><small>Cadres : #' + pris.join(', #') + ' (sautés)</small>';
   }
   $('enchere-plus').onclick = function () {
-    if (lot && !lot.n) { lot.num++; enchere = lot.num; } else if (!lot) enchere++;
+    if (lot && !lot.n) { lot.num++; enchere = lot.num; } else if (!lot) enchere = suivante(enchere + 1);
     majEncheres();
   };
   $('enchere-moins').onclick = function () {
-    if (lot && !lot.n) { if (lot.num > 1) { lot.num--; enchere = lot.num; } } else if (!lot && enchere > 1) enchere--;
+    if (lot && !lot.n) { if (lot.num > 1) { lot.num--; enchere = lot.num; } }
+    else if (!lot && enchere > 1) {
+      var pris = numerosCadres(), n = enchere - 1;
+      while (n > 1 && pris[n]) n--;
+      if (!pris[n]) enchere = n;
+    }
     majEncheres();
   };
   // ---- carte gradée vendue dans un cadre : le QR n'est pas accessible, on la choisit dans le catalogue des cadres ----
@@ -1526,7 +1552,7 @@
     p.hidden = !p.hidden;
     if (p.hidden) return;
     $('cadre-recherche').value = '';
-    cadreChoisi = null;
+    cadreChoisi = null; $('cadre-num').value = '';
     if (catalogue) { remplirCadres(); chargerImages(); return; }
     $('cadre-msg').textContent = 'Chargement du catalogue…';
     appeler('catalogueCadres').then(function (r) { catalogue = r.cadres || []; remplirCadres(); chargerImages(); })
@@ -1538,20 +1564,36 @@
     var i = cadreChoisi;
     if (i === null || !catalogue) { $('cadre-msg').textContent = 'Touche d\'abord une carte dans la liste.'; return; }
     var c = catalogue[i];
+    var saisi = parseInt($('cadre-num').value.replace(/\D/g, ''), 10);
+    if ($('cadre-num').value.trim() && !(saisi > 0)) { $('cadre-msg').textContent = 'Numéro d\'enchère invalide.'; return; }
+    var num = saisi > 0 ? saisi : null;
+    if (num && !lot && lignes.some(function (l) { return l.num === num && !l.lot; })) {
+      bip(300, 0.25);
+      $('cadre-msg').textContent = 'L\'enchère #' + num + ' est déjà saisie. Vérifie le numéro (ou utilise Lot).';
+      return;
+    }
     cadreChoisi = null;
     var ligne = { cle: 'cadre ' + Date.now(), gradateur: 'CollectAura', cert: 'cadre', carte: c.carte, numero: c.numero,
       note: '', envoi: true, num: 0, cadre: true };
     var scan = { cadreCatalogue: { carte: c.carte, numero: c.numero, extension: c.extension, yen: c.yen }, ligne: ligne, pret: true };
-    if (enchere !== null) {
+    if (num && !lot) {
+      // cadre saisi avec son propre numéro : le compteur des autres cartes ne bouge pas, il sautera ce numéro
+      scan.num = num; scan.lot = false;
+      ligne.num = num; ligne.lot = false;
+    } else if (enchere !== null) {
       scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
       ligne.num = scan.num; ligne.lot = scan.lot;
-      if (lot) lot.n++; else enchere++;
-      majEncheres();
+      if (lot) lot.n++;
     }
     bip(900, 0.08);
     lignes.unshift(ligne); file.push(scan);
-    etat('', (c.carte + ' ' + c.numero).trim() + ' (cadre)', 'Enregistrement…');
-    $('panneau-cadre').hidden = true;
+    if (enchere !== null && !lot) enchere = suivante(enchere);
+    majEncheres();
+    etat('', (c.carte + ' ' + c.numero).trim() + ' (cadre)', 'Enchère #' + ligne.num + ' · enregistrement…');
+    // le panneau reste ouvert pour enchaîner les cadres suivants
+    $('cadre-num').value = ''; $('cadre-recherche').value = '';
+    remplirCadres();
+    $('cadre-msg').textContent = 'Cadre #' + ligne.num + ' ajouté. Ajoute le suivant, ou « Fermer » pour scanner les autres cartes.';
     afficherListe(); vider();
   };
   $('btn-lot').onclick = function () {
@@ -1560,7 +1602,7 @@
       etat('', 'Enchère #' + lot.num + ' : lot',  'Scanne toutes les cartes du lot, puis appuie sur « Fin du lot ».');
     } else {
       var fini = lot; lot = null;
-      if (fini.n) enchere = fini.num + 1;
+      if (fini.n) enchere = suivante(fini.num + 1);
       etat('ok', fini.n ? 'Enchère #' + fini.num + ' (lot) : ' + fini.n + ' carte(s)' : 'Lot annulé (aucune carte)',
         'Prochaine enchère : #' + enchere);
     }
