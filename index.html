@@ -690,7 +690,7 @@
         if (s.ajoutCadre) {
           if (r.cadreAjoute) {
             l.cadre = true;
-            etat('ok', 'Cadre ajouté : + ' + PRIX_CADRE + ' € HT', (l.carte ? l.carte + ' · ' : '') + 'certificat ' + l.cert);
+            etat('ok', 'Cadre ajouté', (l.carte ? l.carte + ' · ' : '') + 'certificat ' + l.cert);
           }
           return;
         }
@@ -704,12 +704,12 @@
           l.envoi = false; l.num = r.num; l.cadre = !!r.cadre;
           if (!l.carte && r.carte) { l.carte = r.carte; l.numero = r.numero; l.note = r.note; }
           if (lignes[0] === l && r.cadreCatalogue) {
-            etat('ok', (l.carte + ' ' + l.numero).trim() + ' (cadre)', 'Enchère #' + l.num + ' · cadre + ' + PRIX_CADRE + ' € HT · QR non scanné');
+            etat('ok', (l.carte + ' ' + l.numero).trim() + ' (cadre)', 'Enchère #' + l.num + ' · cadre · QR non scanné');
           } else if (lignes[0] === l) {
             if (r.ailleurs) etat('alerte', l.carte || (l.gradateur + ' n° ' + l.cert), 'Déjà scannée sur ' + r.ailleurs);
             else if (r.trouve && l.gradateur !== 'PCA') etat(/PSA :/.test(r.statut) ? 'alerte' : 'ok', (l.carte + ' ' + l.numero).trim(),
               (l.gradateur === 'PSA' ? 'PSA ' : 'CA ') + l.note + (/PSA :/.test(r.statut) ? ' · prix à relever' : '') + (r.extension ? ' · ' + r.extension : '') + ' · certificat ' + l.cert +
-              (l.cadre ? ' · cadre + ' + PRIX_CADRE + ' € HT' : ''));
+              (l.cadre ? ' · cadre' : ''));
             else if (!r.trouve && l.gradateur !== 'PCA') etat('alerte', l.gradateur + ' n° ' + l.cert, r.statut);
           }
         } else {
@@ -1653,7 +1653,7 @@
     cadreChoisi = null;
     var ligne = { cle: 'cadre ' + Date.now(), gradateur: 'CollectAura', cert: 'cadre', carte: c.carte, numero: c.numero,
       note: '', envoi: true, num: 0, cadre: true };
-    var scan = { cadreCatalogue: { carte: c.carte, numero: c.numero, extension: c.extension, yen: c.yen }, ligne: ligne, pret: true };
+    var scan = { cadreCatalogue: { carte: c.carte, numero: c.numero, extension: c.extension }, ligne: ligne, pret: true };
     if (lotScan) {
       scan.num = lot.num; scan.lot = true;
       ligne.num = lot.num; ligne.lot = true;
