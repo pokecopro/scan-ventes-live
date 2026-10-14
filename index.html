@@ -80,6 +80,23 @@
   #encheres span b { font-size: 20px; }
   #encheres button { padding: 8px 12px; min-width: 42px; }
   #encheres.lot { border-color: #a78bfa; background: color-mix(in srgb, #a78bfa 18%, var(--carte)); }
+  #panneau-cadre { margin: 8px 0; padding: 10px; border-radius: 12px; background: var(--carte); border: 1px solid #f2b33d; }
+  #panneau-cadre input, #panneau-cadre select { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+  #cadre-liste { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: 58vh; overflow-y: auto;
+    margin-bottom: 8px; padding: 2px; -webkit-overflow-scrolling: touch; }
+  .cadre-carte { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; margin: 0;
+    border: 2px solid transparent; border-radius: 10px; background: var(--fond, transparent); color: inherit;
+    font: inherit; font-size: 11px; line-height: 1.2; text-align: center; cursor: pointer; min-height: 0; }
+  .cadre-carte.choisi { border-color: #f2b33d; background: color-mix(in srgb, #f2b33d 22%, transparent); }
+  .cadre-carte .vignette { aspect-ratio: 63 / 88; border-radius: 6px; overflow: hidden; display: flex;
+    align-items: center; justify-content: center; background: color-mix(in srgb, currentColor 8%, transparent); }
+  .cadre-carte img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cadre-carte .vignette span { padding: 4px; font-size: 11px; opacity: .7; }
+  .cadre-carte b { font-weight: 600; word-break: break-word; }
+  .cadre-carte small { opacity: .7; font-size: 10px; }
+  #panneau-cadre .ligne { display: flex; gap: 8px; }
+  #panneau-cadre .ligne button { flex: 1; }
+  #btn-cadre { background: color-mix(in srgb, #f2b33d 25%, var(--carte)); border-color: #f2b33d; }
   #btn-lot.actif { background: #a78bfa; border-color: #a78bfa; color: #10151c; font-weight: 600; }
   #etape-1.actif { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   #etape-2.actif { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
@@ -247,6 +264,16 @@
     <button id="enchere-plus" aria-label="Numéro suivant">+</button>
     <button id="enchere-moins" aria-label="Numéro précédent">−</button>
     <button id="btn-lot">Lot</button>
+    <button id="btn-cadre">Cadre</button>
+  </div>
+  <div id="panneau-cadre" hidden>
+    <input id="cadre-recherche" type="search" autocomplete="off" placeholder="Rechercher : nom, numéro ou extension">
+    <div id="cadre-liste" role="listbox" aria-label="Cartes en cadre"></div>
+    <div class="ligne">
+      <button id="cadre-ok" class="principal">Ajouter la carte du cadre</button>
+      <button id="cadre-fermer">Fermer</button>
+    </div>
+    <p class="aide" id="cadre-msg"></p>
   </div>
   <div id="lecteur">
     <video id="video" playsinline muted autoplay></video>
@@ -367,7 +394,9 @@
       var n = document.createElement('span'); n.className = 'n'; n.textContent = l.num || '…';
       var c = document.createElement('span'); c.className = 'c';
       c.textContent = l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : 'Carte à compléter';
-      var p = document.createElement('small'); p.textContent = 'Certificat ' + l.cert + (l.lot ? ' · lot' : '') + (l.cadre ? ' · cadre' : '') + (l.nr ? ' · non régulé' : '');
+      var p = document.createElement('small');
+      p.textContent = (/^CADRE-/.test(l.cert) || l.cert === 'cadre' ? 'Dans un cadre, QR non scanné' : 'Certificat ' + l.cert + (l.cadre ? ' · cadre' : '')) +
+        (l.lot ? ' · lot' : '') + (l.nr ? ' · non régulé' : '');
       c.appendChild(p);
       var g = document.createElement('span'); g.className = 'g';
       g.textContent = prefixe(l.gradateur) + (l.note ? ' ' + l.note : '');
@@ -598,7 +627,7 @@
     enCours = true;
     appeler('enregistrerLot', {
       nonRegle: nr,
-      scans: lot.map(function (s) { return { texte: s.texte, cadre: s.cadre || '', num: s.num || 0, lot: !!s.lot }; })
+      scans: lot.map(function (s) { return { texte: s.texte || '', cadre: s.cadre || '', num: s.num || 0, lot: !!s.lot, cadreCatalogue: s.cadreCatalogue || null }; })
     }).then(function (rep) {
       var res = rep.resultats || [];
       compteur = rep.compteur;
@@ -639,7 +668,9 @@
         if (r.ok) {
           l.envoi = false; l.num = r.num; l.cadre = !!r.cadre;
           if (!l.carte && r.carte) { l.carte = r.carte; l.numero = r.numero; l.note = r.note; }
-          if (lignes[0] === l) {
+          if (lignes[0] === l && r.cadreCatalogue) {
+            etat('ok', (l.carte + ' ' + l.numero).trim() + ' (cadre)', 'Enchère #' + l.num + ' · cadre + ' + PRIX_CADRE + ' € HT · QR non scanné');
+          } else if (lignes[0] === l) {
             if (r.ailleurs) etat('alerte', l.carte || (l.gradateur + ' n° ' + l.cert), 'Déjà scannée sur ' + r.ailleurs);
             else if (r.trouve && l.gradateur !== 'PCA') etat(/PSA :/.test(r.statut) ? 'alerte' : 'ok', (l.carte + ' ' + l.numero).trim(),
               (l.gradateur === 'PSA' ? 'PSA ' : 'CA ') + l.note + (/PSA :/.test(r.statut) ? ' · prix à relever' : '') + (r.extension ? ' · ' + r.extension : '') + ' · certificat ' + l.cert +
@@ -1421,7 +1452,7 @@
   function majEncheres() {
     var visible = session.mode === 'renta' && session.live !== 'PRIX' && !modeNR && enchere !== null;
     $('encheres').hidden = !visible;
-    if (!visible) return;
+    if (!visible) { $('panneau-cadre').hidden = true; return; }
     $('encheres').classList.toggle('lot', !!lot);
     $('btn-lot').classList.toggle('actif', !!lot);
     $('btn-lot').textContent = lot ? 'Fin du lot' : 'Lot';
@@ -1436,6 +1467,92 @@
   $('enchere-moins').onclick = function () {
     if (lot && !lot.n) { if (lot.num > 1) { lot.num--; enchere = lot.num; } } else if (!lot && enchere > 1) enchere--;
     majEncheres();
+  };
+  // ---- carte gradée vendue dans un cadre : le QR n'est pas accessible, on la choisit dans le catalogue des cadres ----
+  var catalogue = null;
+  var cadreChoisi = null;   // index dans le catalogue de la carte touchée
+  function sansAccent(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+  function cleImage(c) { return 'imgc|' + c.numero + '|' + c.extension + '|' + c.carte; }
+  function remplirCadres() {
+    var mots = sansAccent($('cadre-recherche').value).split(/\s+/).filter(Boolean);
+    var liste = $('cadre-liste'); liste.innerHTML = '';
+    var n = 0, choisiVisible = false;
+    (catalogue || []).forEach(function (c, i) {
+      var texte = sansAccent([c.carte, c.numero, c.extension, c.fr].join(' '));
+      if (!mots.every(function (m) { return texte.indexOf(m) >= 0; })) return;
+      n++;
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'cadre-carte'; b.dataset.i = i;
+      b.setAttribute('role', 'option');
+      if (i === cadreChoisi) { b.classList.add('choisi'); choisiVisible = true; }
+      var v = document.createElement('div'); v.className = 'vignette';
+      if (c.img) {
+        var im = document.createElement('img'); im.loading = 'lazy'; im.alt = ''; im.src = c.img;
+        im.onerror = function () { v.innerHTML = ''; var t = document.createElement('span'); t.textContent = 'Pas d\'image'; v.appendChild(t); };
+        v.appendChild(im);
+      } else { var t = document.createElement('span'); t.textContent = 'Pas d\'image'; v.appendChild(t); }
+      var nom = document.createElement('b'); nom.textContent = c.fr && c.fr !== c.carte ? c.fr : c.carte;
+      var info = document.createElement('small'); info.textContent = (c.numero && c.numero !== '-' ? c.numero + ' · ' : '') + c.extension;
+      b.appendChild(v); b.appendChild(nom); b.appendChild(info);
+      b.onclick = function () {
+        cadreChoisi = i;
+        Array.prototype.forEach.call(liste.children, function (x) { x.classList.toggle('choisi', x === b); });
+        $('cadre-msg').textContent = (c.fr && c.fr !== c.carte ? c.fr : c.carte) + ' ' + (c.numero !== '-' ? c.numero : '') + ' choisie';
+      };
+      liste.appendChild(b);
+    });
+    if (!choisiVisible) cadreChoisi = null;
+    $('cadre-msg').textContent = catalogue ? n + ' cadre(s) · touche la carte puis « Ajouter »' : '';
+  }
+  // Les images manquantes sont cherchées par petits paquets côté serveur, puis gardées pour la suite.
+  var imagesEnCours = false;
+  function chargerImages() {
+    if (imagesEnCours || !catalogue) return;
+    if (!catalogue.some(function (c) { return !c.img && /\//.test(c.numero); })) return;
+    imagesEnCours = true;
+    var depuis = 0, tours = 0;
+    (function tour() {
+      appeler('imagesCadres', { n: 8, depuis: depuis }).then(function (r) {
+        var neuves = 0;
+        catalogue.forEach(function (c) { var u = r.images[cleImage(c)]; if (u && !c.img) { c.img = u; neuves++; } });
+        if (neuves && !$('panneau-cadre').hidden) remplirCadres();
+        depuis += r.echecs || 0;
+        if (r.restants > 0 && ++tours < 20) tour(); else imagesEnCours = false;
+      }).catch(function () { imagesEnCours = false; });
+    })();
+  }
+  $('btn-cadre').onclick = function () {
+    var p = $('panneau-cadre');
+    p.hidden = !p.hidden;
+    if (p.hidden) return;
+    $('cadre-recherche').value = '';
+    cadreChoisi = null;
+    if (catalogue) { remplirCadres(); chargerImages(); return; }
+    $('cadre-msg').textContent = 'Chargement du catalogue…';
+    appeler('catalogueCadres').then(function (r) { catalogue = r.cadres || []; remplirCadres(); chargerImages(); })
+      .catch(function (e) { $('cadre-msg').textContent = 'Catalogue illisible : ' + String(e && e.message || e); });
+  };
+  $('cadre-recherche').oninput = remplirCadres;
+  $('cadre-fermer').onclick = function () { $('panneau-cadre').hidden = true; };
+  $('cadre-ok').onclick = function () {
+    var i = cadreChoisi;
+    if (i === null || !catalogue) { $('cadre-msg').textContent = 'Touche d\'abord une carte dans la liste.'; return; }
+    var c = catalogue[i];
+    cadreChoisi = null;
+    var ligne = { cle: 'cadre ' + Date.now(), gradateur: 'CollectAura', cert: 'cadre', carte: c.carte, numero: c.numero,
+      note: '', envoi: true, num: 0, cadre: true };
+    var scan = { cadreCatalogue: { carte: c.carte, numero: c.numero, extension: c.extension, yen: c.yen }, ligne: ligne, pret: true };
+    if (enchere !== null) {
+      scan.num = lot ? lot.num : enchere; scan.lot = !!lot;
+      ligne.num = scan.num; ligne.lot = scan.lot;
+      if (lot) lot.n++; else enchere++;
+      majEncheres();
+    }
+    bip(900, 0.08);
+    lignes.unshift(ligne); file.push(scan);
+    etat('', (c.carte + ' ' + c.numero).trim() + ' (cadre)', 'Enregistrement…');
+    $('panneau-cadre').hidden = true;
+    afficherListe(); vider();
   };
   $('btn-lot').onclick = function () {
     if (!lot) {
