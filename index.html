@@ -74,6 +74,15 @@
   .pl-carte { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
   .pl-detail { font-size: 13px; color: var(--doux); margin-top: 6px; overflow-wrap: anywhere; white-space: pre-line; text-align: left; }
   li.envoi { opacity: .6; }
+  li.modifiable { cursor: pointer; }
+  li.modifiable .n { color: var(--accent); text-decoration: underline dotted; }
+  li.choisie { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  #panneau-num { margin: 8px 0; padding: 10px; border-radius: 12px; background: var(--carte); border: 1px solid var(--accent); }
+  #panneau-num input[type=text] { width: 100%; box-sizing: border-box; margin-bottom: 8px; font-size: 20px; }
+  #panneau-num .coche { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin: 2px 0 6px; }
+  #panneau-num .coche input { margin-top: 3px; width: 20px; height: 20px; flex: none; }
+  #panneau-num .ligne { display: flex; gap: 8px; }
+  #panneau-num .ligne button { flex: 1; }
   li.nr .c { color: var(--doux); text-decoration: line-through; }
   li.nr .c small { text-decoration: none; color: var(--alerte); }
   #etapes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -318,6 +327,20 @@
     <input id="saisie-num" type="text" inputmode="numeric" placeholder="N° de certificat">
     <button id="saisie-ok">OK</button>
   </div>
+  <div id="panneau-num" hidden>
+    <div id="num-titre" style="font-weight:600;margin-bottom:6px"></div>
+    <label for="num-nouveau" class="aide" style="display:block;margin:0 0 4px">Vrai numéro d'enchère</label>
+    <input id="num-nouveau" type="text" inputmode="numeric" autocomplete="off">
+    <label class="coche"><input id="num-decaler" type="checkbox" checked>
+      <span>Décaler aussi les cartes scannées après elle <small class="aide" style="display:block;margin:2px 0 0">À cocher quand le streameur a oublié une carte : toutes les suivantes avancent du même écart.</small></span></label>
+    <p class="aide" id="num-detail" style="margin:0 0 8px"></p>
+    <div class="ligne">
+      <button id="num-ok" class="principal">Valider</button>
+      <button id="num-fermer">Annuler</button>
+    </div>
+    <p class="aide" id="num-msg"></p>
+  </div>
+  <p class="aide" id="aide-liste" hidden>Touche le numéro d'une carte pour le corriger.</p>
   <ul id="liste"></ul>
 </section>
 
@@ -426,6 +449,11 @@
     lignes.forEach(function (l) {
       var li = document.createElement('li');
       li.className = (l.envoi ? 'envoi' : '') + (l.nr ? ' nr' : '');
+      if (numModifiable(l)) {
+        li.classList.add('modifiable');
+        if (aCorriger === l) li.classList.add('choisie');
+        li.onclick = function () { ouvrirNumero(l); };
+      }
       var n = document.createElement('span'); n.className = 'n'; n.textContent = l.num || '…';
       var c = document.createElement('span'); c.className = 'c';
       c.textContent = l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : 'Carte à compléter';
@@ -445,7 +473,109 @@
       $('unite').textContent = MODES.renta.unite + (nbNR ? ' · ' + nbNR + ' non régulé(s)' : '');
     }
     $('envoi').textContent = attente ? attente + ' carte(s) en cours d\'enregistrement…' : '';
+    $('aide-liste').hidden = !lignes.some(numModifiable);
   }
+
+  // ---- Correction du numéro d'enchère d'une carte déjà scannée ----
+  // Cas typique : le streameur a oublié de mettre une carte dans le rack, les cartes scannées
+  // ensuite ont toutes pris un numéro trop petit. On corrige la première, les suivantes suivent.
+  var aCorriger = null;
+  function numModifiable(l) {
+    return session.mode === 'renta' && session.live !== 'PRIX' && !l.envoi && l.num > 0;
+  }
+  function suivantesDe(l) {
+    return lignes.filter(function (x) { return x !== l && !estCadreCatalogue(x) && x.num > l.num && !(l.lot && x.lot && x.num === l.num); });
+  }
+  function detailNumero() {
+    var l = aCorriger; if (!l) return;
+    var v = Math.floor(Number($('num-nouveau').value)), d = $('num-detail');
+    var memeLot = l.lot ? lignes.filter(function (x) { return x !== l && x.lot && x.num === l.num; }).length : 0;
+    var txt = memeLot ? 'Tout le lot (' + (memeLot + 1) + ' cartes) change de numéro. ' : '';
+    if (!(v > 0) || v === l.num) { d.textContent = txt; return; }
+    var ap = apercuNumero(l, v, $('num-decaler').checked);
+    if (ap.conflit) txt += 'Impossible : l\'enchère #' + ap.conflit + ' a déjà ' + (ap.cadre ? 'un cadre' : 'une carte') + '.';
+    else {
+      txt += ap.changes.slice(0, 6).map(function (c) { return '#' + c[0] + ' → #' + c[1]; }).join(', ') + (ap.changes.length > 6 ? ' … (' + ap.changes.length + ' enchères)' : '') + '.';
+      if ($('num-decaler').checked && ap.changes.length < 2) txt += ' Aucune carte scannée après celle-ci.';
+      if ($('num-decaler').checked && lignes.some(function (x) { return estCadreCatalogue(x) && x !== l; })) txt += ' Les cadres saisis avec leur numéro ne bougent pas.';
+    }
+    d.textContent = txt;
+  }
+  // Même règle que changerNumero côté serveur : les suivantes gardent leur écart, les cadres saisis ne bougent pas.
+  function apercuNumero(l, v, decaler) {
+    var a = l.num, bouge = [], suiv = decaler ? suivantesDe(l) : [];
+    var groupe = lignes.filter(function (x) { return x === l || (l.lot && x.lot && x.num === a); });
+    var restent = lignes.filter(function (x) { return groupe.indexOf(x) < 0 && suiv.indexOf(x) < 0 && !x.envoi; });
+    var cad = {}, car = {};
+    restent.forEach(function (x) { if (x.num > 0) (estCadreCatalogue(x) ? cad : car)[x.num] = true; });
+    if (cad[v] || car[v]) return { conflit: v, cadre: !!cad[v], changes: [] };
+    var changes = [[a, v]], nums = {};
+    suiv.forEach(function (x) { nums[x.num] = true; });
+    var avant = a, apres = v;
+    var liste = Object.keys(nums).map(Number).sort(function (x, y) { return x - y; });
+    for (var k = 0; k < liste.length; k++) {
+      var o = liste[k], pas = o - avant;
+      for (var c = avant + 1; c < o; c++) if (cad[c]) pas--;
+      if (pas < 1) pas = 1;
+      var nn = apres;
+      for (var q = 0; q < pas; q++) { nn++; while (cad[nn]) nn++; }
+      if (car[nn]) return { conflit: nn, cadre: false, changes: [] };
+      changes.push([o, nn]); avant = o; apres = nn;
+    }
+    return { changes: changes.filter(function (c) { return c[0] !== c[1]; }) };
+  }
+  function ouvrirNumero(l) {
+    if (file.length) { etat('alerte', 'Attends la fin de l\'enregistrement', file.length + ' carte(s) en cours.'); return; }
+    if (lot && lot.n) { etat('alerte', 'Termine d\'abord le lot', 'Appuie sur « Fin du lot », puis touche la carte à corriger.'); return; }
+    aCorriger = l;
+    $('num-titre').textContent = (l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : prefixe(l.gradateur) + ' ' + l.cert) + ' · enchère #' + l.num;
+    $('num-nouveau').value = suivante(l.num + 1);
+    $('num-decaler').checked = true;
+    $('num-msg').textContent = '';
+    $('num-ok').disabled = false;
+    $('panneau-num').hidden = false;
+    detailNumero();
+    afficherListe();
+    $('panneau-num').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function fermerNumero() {
+    aCorriger = null;
+    $('panneau-num').hidden = true;
+    afficherListe();
+  }
+  $('num-nouveau').oninput = detailNumero;
+  $('num-decaler').onchange = detailNumero;
+  $('num-fermer').onclick = fermerNumero;
+  $('num-ok').onclick = function () {
+    var l = aCorriger; if (!l) return;
+    var v = Math.floor(Number(String($('num-nouveau').value).trim()));
+    if (!(v > 0)) { $('num-msg').textContent = 'Tape un numéro d\'enchère valide.'; return; }
+    if (v === l.num) { fermerNumero(); return; }
+    if (file.length) { $('num-msg').textContent = 'Attends la fin de l\'enregistrement des cartes en cours.'; return; }
+    var b = this; b.disabled = true;
+    $('num-msg').textContent = 'Enregistrement…';
+    appeler('changerNumero', { gradateur: l.gradateur, cert: l.cert, nouveau: v, decaler: $('num-decaler').checked })
+      .then(function (r) {
+        if (!r.ok) {
+          b.disabled = false;
+          $('num-msg').textContent = r.raison === 'pris'
+            ? 'Rien n\'a changé : l\'enchère #' + r.num + ' a déjà ' + (r.cadre ? 'un cadre' : 'une carte') + '. Corrige d\'abord celle-là, ou vérifie le numéro.'
+            : r.raison === 'absent' ? 'Carte introuvable sur ce live : recharge la page.' : 'Numéro invalide.';
+          return;
+        }
+        var ch = r.changes || [];
+        var resume = ch.length ? ch.slice(0, 4).map(function (c) { return '#' + c[0] + ' → #' + c[1]; }).join(', ') + (ch.length > 4 ? '…' : '') : '';
+        aCorriger = null;
+        $('panneau-num').hidden = true;
+        return chargerLive().then(function () {
+          etat('ok', r.cartes + ' carte(s) renumérotée(s)', resume + (enchere !== null ? ' · prochaine enchère : #' + enchere : ''));
+        });
+      })
+      .catch(function (e) {
+        b.disabled = false;
+        $('num-msg').textContent = 'Correction impossible : ' + String(e && e.message || e);
+      });
+  };
 
   // ---- reconnaissance du QR code ----
   function analyser(texte) {
@@ -1737,6 +1867,7 @@
   $('btn-changer').onclick = function () {
     if (file.length) { etat('alerte', 'Attends la fin de l\'enregistrement', file.length + ' carte(s) en cours.'); return; }
     arreterCamera();
+    aCorriger = null; $('panneau-num').hidden = true;
     $('ecran-scan').hidden = true; $('ecran-menu').hidden = false;
   };
 
