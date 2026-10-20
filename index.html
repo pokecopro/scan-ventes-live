@@ -83,6 +83,14 @@
   #panneau-num .coche input { margin-top: 3px; width: 20px; height: 20px; flex: none; }
   #panneau-num .ligne { display: flex; gap: 8px; }
   #panneau-num .ligne button { flex: 1; }
+  #panneau-nr { margin: 8px 0; padding: 10px; border-radius: 12px; background: var(--carte); border: 1px solid var(--alerte); }
+  #panneau-nr .ligne { display: flex; gap: 8px; }
+  #panneau-nr .ligne button { flex: 1; }
+  #nr-ok { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
+  #nr-ok.retablir { background: var(--accent); border-color: var(--accent); color: #fff; }
+  li.touche-nr { cursor: pointer; }
+  li.touche-nr .n { color: var(--alerte); text-decoration: underline dotted; }
+  li.choisie-nr { background: color-mix(in srgb, var(--alerte) 16%, transparent); }
   li.nr .c { color: var(--doux); text-decoration: line-through; }
   li.nr .c small { text-decoration: none; color: var(--alerte); }
   #etapes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -340,6 +348,15 @@
     </div>
     <p class="aide" id="num-msg"></p>
   </div>
+  <div id="panneau-nr" hidden>
+    <div id="nr-titre" style="font-weight:600;margin-bottom:6px"></div>
+    <p class="aide" id="nr-detail" style="margin:0 0 8px"></p>
+    <div class="ligne">
+      <button id="nr-ok">Passer en non régulé</button>
+      <button id="nr-fermer">Annuler</button>
+    </div>
+    <p class="aide" id="nr-msg"></p>
+  </div>
   <p class="aide" id="aide-liste" hidden>Touche le numéro d'une carte pour le corriger.</p>
   <ul id="liste"></ul>
 </section>
@@ -449,7 +466,12 @@
     lignes.forEach(function (l) {
       var li = document.createElement('li');
       li.className = (l.envoi ? 'envoi' : '') + (l.nr ? ' nr' : '');
-      if (numModifiable(l)) {
+      if (modeNR && nrModifiable(l)) {
+        // étape 2 : toucher une carte la passe en non régulé (cadre sans QR, QR illisible)
+        li.classList.add('touche-nr');
+        if (aMarquer === l) li.classList.add('choisie-nr');
+        li.onclick = function () { ouvrirNR(l); };
+      } else if (!modeNR && numModifiable(l)) {
         li.classList.add('modifiable');
         if (aCorriger === l) li.classList.add('choisie');
         li.onclick = function () { ouvrirNumero(l); };
@@ -473,7 +495,10 @@
       $('unite').textContent = MODES.renta.unite + (nbNR ? ' · ' + nbNR + ' non régulé(s)' : '');
     }
     $('envoi').textContent = attente ? attente + ' carte(s) en cours d\'enregistrement…' : '';
-    $('aide-liste').hidden = !lignes.some(numModifiable);
+    $('aide-liste').textContent = modeNR
+      ? 'Cadre sans QR ou QR illisible : touche la carte dans la liste pour la passer en non régulé.'
+      : 'Touche le numéro d\'une carte pour le corriger.';
+    $('aide-liste').hidden = !lignes.some(modeNR ? nrModifiable : numModifiable);
   }
 
   // ---- Correction du numéro d'enchère d'une carte déjà scannée ----
@@ -574,6 +599,63 @@
       .catch(function (e) {
         b.disabled = false;
         $('num-msg').textContent = 'Correction impossible : ' + String(e && e.message || e);
+      });
+  };
+
+  // ---- Étape 2 : passer en non régulé une carte touchée dans la liste ----
+  // Un cadre saisi sans QR ne peut pas être rescanné : on le touche dans la liste. Marche aussi pour un QR illisible.
+  var aMarquer = null;
+  function nrModifiable(l) {
+    return session.mode === 'renta' && session.live !== 'PRIX' && !l.envoi && !!l.cert;
+  }
+  function groupeNR(l) {
+    return lignes.filter(function (x) { return x === l || (l.lot && x.lot && x.num === l.num); });
+  }
+  function ouvrirNR(l) {
+    if (file.length) { etat('alerte', 'Attends la fin de l\'enregistrement', file.length + ' carte(s) en cours.'); return; }
+    aMarquer = l;
+    var g = groupeNR(l), cadre = estCadreCatalogue(l);
+    $('nr-titre').textContent = (l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : prefixe(l.gradateur) + ' ' + l.cert) +
+      (l.num ? ' · enchère #' + l.num : '');
+    $('nr-detail').textContent = (cadre ? 'Cadre saisi sans QR. ' : '') +
+      (l.nr ? 'Cette vente est en non régulé. Remets-la en vendue si elle a finalement été payée.'
+            : 'Vente non payée : elle sort du calcul' + (cadre ? '.' : ' et la carte retourne en stock.')) +
+      (g.length > 1 ? ' Tout le lot (' + g.length + ' cartes) suit.' : '');
+    $('nr-ok').textContent = l.nr ? 'Remettre en vendue' : 'Passer en non régulé';
+    $('nr-ok').classList.toggle('retablir', !!l.nr);
+    $('nr-ok').disabled = false;
+    $('nr-msg').textContent = '';
+    $('panneau-nr').hidden = false;
+    afficherListe();
+    $('panneau-nr').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function fermerNR() {
+    aMarquer = null;
+    $('panneau-nr').hidden = true;
+    afficherListe();
+  }
+  $('nr-fermer').onclick = fermerNR;
+  $('nr-ok').onclick = function () {
+    var l = aMarquer; if (!l) return;
+    if (file.length) { $('nr-msg').textContent = 'Attends la fin de l\'enregistrement des cartes en cours.'; return; }
+    var b = this, versNR = !l.nr;
+    b.disabled = true;
+    $('nr-msg').textContent = 'Enregistrement…';
+    appeler('nonRegleLigne', { gradateur: l.gradateur, cert: l.cert, nr: versNR })
+      .then(function (r) {
+        if (!r.ok) { b.disabled = false; $('nr-msg').textContent = 'Carte introuvable sur ce live : recharge la page.'; return; }
+        aMarquer = null;
+        $('panneau-nr').hidden = true;
+        var nom = l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : 'certificat ' + l.cert;
+        return chargerLive().then(function () {
+          etat('ok', (versNR ? 'Non régulé : ' : 'Remise en vendue : ') + nom,
+            (r.cartes > 1 ? r.cartes + ' cartes du lot' : 'Enchère #' + l.num) +
+            (versNR ? ' · retirée des ventes du live' : ' · comptée à nouveau comme vendue'));
+        });
+      })
+      .catch(function (e) {
+        b.disabled = false;
+        $('nr-msg').textContent = 'Impossible : ' + String(e && e.message || e);
       });
   };
 
@@ -1612,6 +1694,10 @@
   // ---- Rentabilité : ventes non réglées ----
   function basculerNR(actif) {
     modeNR = actif; dernierTexte = '';
+    // les deux panneaux de la liste (numéro / non régulé) ne restent pas ouverts d'une étape à l'autre
+    aCorriger = null; aMarquer = null;
+    $('panneau-num').hidden = true; $('panneau-nr').hidden = true;
+    afficherListe();
     $('etape-1').classList.toggle('actif', !actif);
     $('etape-2').classList.toggle('actif', actif);
     $('lecteur').classList.toggle('nr', actif);
@@ -1835,7 +1921,7 @@
   $('etape-2').onclick = function () {
     basculerNR(true);
     etat('alerte', 'Étape 2 : rescanne les non régulés',
-      'Ce sont les cartes qui restent une fois les colis finis. Elles sortent du calcul et retournent en stock.');
+      'Ce sont les cartes qui restent une fois les colis finis. Elles sortent du calcul et retournent en stock. Cadre sans QR : touche-le dans la liste.');
   };
 
   // ---- Listing : fichier d'import Whatnot ----
