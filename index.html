@@ -124,6 +124,8 @@
   #panneau-cadre.lot { border-color: #a78bfa; }
   #panneau-cadre .ligne button { flex: 1; }
   #btn-cadre { background: color-mix(in srgb, #f2b33d 25%, var(--carte)); border-color: #f2b33d; }
+  #btn-cadre-nr { grid-column: 1 / -1; background: color-mix(in srgb, #f2b33d 25%, var(--carte)); border-color: #f2b33d; }
+  #panneau-cadre.nr #cadre-ok { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
   #btn-lot.actif { background: #a78bfa; border-color: #a78bfa; color: #10151c; font-weight: 600; }
   #etape-1.actif { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   #etape-2.actif { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
@@ -285,6 +287,7 @@
   <div id="etapes" hidden>
     <button id="etape-1" class="actif">1 · Toutes les cartes</button>
     <button id="etape-2">2 · Non régulés</button>
+    <button id="btn-cadre-nr" hidden>Cadre non régulé (choisir dans le catalogue)</button>
   </div>
   <div id="encheres" hidden>
     <span id="enchere-txt"></span>
@@ -1697,6 +1700,9 @@
     // les deux panneaux de la liste (numéro / non régulé) ne restent pas ouverts d'une étape à l'autre
     aCorriger = null; aMarquer = null;
     $('panneau-num').hidden = true; $('panneau-nr').hidden = true;
+    // le catalogue des cadres change de rôle d'une étape à l'autre : on le referme
+    $('panneau-cadre').hidden = true; cadreChoisi = null;
+    $('btn-cadre-nr').hidden = !actif;
     afficherListe();
     $('etape-1').classList.toggle('actif', !actif);
     $('etape-2').classList.toggle('actif', actif);
@@ -1722,7 +1728,7 @@
   function majEncheres() {
     var visible = session.mode === 'renta' && session.live !== 'PRIX' && !modeNR && enchere !== null;
     $('encheres').hidden = !visible;
-    if (!visible) { $('panneau-cadre').hidden = true; return; }
+    if (!visible) { if (!modeNR) $('panneau-cadre').hidden = true; return; }
     $('encheres').classList.toggle('lot', !!lot);
     $('btn-lot').classList.toggle('actif', !!lot);
     $('btn-lot').textContent = lot ? 'Fin du lot' : 'Lot';
@@ -1779,7 +1785,7 @@
       liste.appendChild(b);
     });
     if (!choisiVisible) cadreChoisi = null;
-    $('cadre-msg').textContent = catalogue ? n + ' cadre(s) · touche la carte puis « Ajouter »' : '';
+    $('cadre-msg').textContent = catalogue ? n + ' cadre(s) · touche la carte puis « ' + (modeNR ? 'Passer en non régulé' : 'Ajouter') + ' »' : '';
   }
   // Les images manquantes sont cherchées par petits paquets côté serveur, puis gardées pour la suite.
   var imagesEnCours = false;
@@ -1798,14 +1804,27 @@
       }).catch(function () { imagesEnCours = false; });
     })();
   }
+  // Étape 2 : le même catalogue sert à passer en non régulé un cadre vendu sans QR (on ne peut pas le rescanner).
+  function panneauCadreNR() {
+    var nr = !!modeNR;
+    $('panneau-cadre').classList.toggle('nr', nr);
+    document.querySelector('label[for=cadre-num]').textContent = nr
+      ? 'Numéro d\'enchère (seulement si la même carte a été vendue plusieurs fois)'
+      : 'Numéro d\'enchère du cadre';
+    $('cadre-ok').textContent = nr ? 'Passer en non régulé' : 'Ajouter la carte du cadre';
+    $('cadre-lot').hidden = nr || !!(lot && lot.n);
+    $('cadre-num').placeholder = nr ? 'facultatif' : 'ex. 158';
+  }
+  $('btn-cadre-nr').onclick = function () { $('btn-cadre').onclick(); };
   $('btn-cadre').onclick = function () {
     var p = $('panneau-cadre');
     p.hidden = !p.hidden;
     if (p.hidden) return;
     $('cadre-recherche').value = '';
     cadreChoisi = null; $('cadre-num').value = ''; finCadreLot(true);
+    panneauCadreNR();
     // « Lot » appuyé juste avant « Cadre » : c'est un lot de cadres, le numéro tapé dans le panneau sera pris
-    if (lot && !lot.n) { lot = null; cadreLot = { num: 0, n: 0 }; majEncheres(); majCadreLot(); }
+    if (!modeNR && lot && !lot.n) { lot = null; cadreLot = { num: 0, n: 0 }; majEncheres(); majCadreLot(); }
     if (catalogue) { remplirCadres(); chargerImages(); return; }
     $('cadre-msg').textContent = 'Chargement du catalogue…';
     appeler('catalogueCadres').then(function (r) { catalogue = r.cadres || []; remplirCadres(); chargerImages(); })
@@ -1813,11 +1832,60 @@
   };
   $('cadre-recherche').oninput = remplirCadres;
   $('cadre-fermer').onclick = function () { finCadreLot(true); $('panneau-cadre').hidden = true; };
+  // Étape 2 : retrouve le cadre choisi parmi les cadres saisis sur ce live, puis le passe en non régulé.
+  function cadreNonRegle(c, num, b) {
+    var msg = $('cadre-msg');
+    if (file.length) { msg.textContent = 'Attends la fin de l\'enregistrement des cartes en cours.'; return; }
+    var nom = (c.fr && c.fr !== c.carte ? c.fr : c.carte) + (c.numero && c.numero !== '-' ? ' ' + c.numero : '');
+    function chercher(avecNumero) {
+      return lignes.filter(function (l) {
+        return estCadreCatalogue(l) && !l.envoi && l.carte === c.carte && (!num || l.num === num) &&
+          (!avecNumero || String(l.numero || '') === String(c.numero || ''));
+      });
+    }
+    var memes = chercher(true);
+    if (!memes.length) memes = chercher(false);   // numéro de carte mal relu par le Sheet : on se contente du nom
+    var libres = memes.filter(function (l) { return !l.nr; });
+    if (!libres.length) {
+      bip(300, 0.25);
+      msg.textContent = memes.length
+        ? nom + ' : déjà en non régulé' + (num ? '' : ' (enchère #' + memes.map(function (l) { return l.num; }).join(', #') + ')') + '.'
+        : nom + (num ? ' n\'est pas saisi en cadre sur l\'enchère #' + num : ' n\'a pas été saisi en cadre sur ce live') +
+          '. Il faut l\'avoir ajouté avec « Cadre » à l\'étape 1.';
+      return;
+    }
+    var nums = libres.map(function (l) { return l.num; }).filter(function (x, k, t) { return t.indexOf(x) === k; });
+    if (nums.length > 1) {
+      bip(300, 0.25);
+      msg.textContent = nom + ' est vendu sur plusieurs enchères (#' + nums.join(', #') + ') : tape le numéro de celle qui n\'est pas payée.';
+      $('cadre-num').focus();
+      return;
+    }
+    var l = libres[0];
+    b.disabled = true;
+    msg.textContent = 'Enregistrement…';
+    appeler('nonRegleLigne', { gradateur: l.gradateur, cert: l.cert, nr: true })
+      .then(function (r) {
+        b.disabled = false;
+        if (!r.ok) { msg.textContent = 'Cadre introuvable sur ce live : recharge la page.'; return; }
+        cadreChoisi = null; $('cadre-num').value = ''; $('cadre-recherche').value = '';
+        return chargerLive().then(function () {
+          remplirCadres();
+          msg.textContent = nom + ' (enchère #' + l.num + ') passé en non régulé' +
+            (r.cartes > 1 ? ', avec tout son lot (' + r.cartes + ' cartes)' : '') + '. Choisis le suivant, ou « Fermer ».';
+          etat('ok', 'Non régulé : ' + nom + ' (cadre)', 'Enchère #' + l.num + ' · retirée des ventes du live');
+        });
+      })
+      .catch(function (e) {
+        b.disabled = false;
+        msg.textContent = 'Impossible : ' + String(e && e.message || e);
+      });
+  }
   // ---- plusieurs cadres vendus sur une même enchère ----
   var cadreLot = null;   // { num, n } tant que le lot de cadres est ouvert
   function majCadreLot() {
     var actif = !!cadreLot;
-    $('cadre-lot').hidden = !!(lot && lot.n);   // lot du scan déjà commencé : les cadres sans numéro y vont
+    $('cadre-lot').hidden = !!modeNR || !!(lot && lot.n);   // lot du scan déjà commencé : les cadres sans numéro y vont
     $('cadre-lot').classList.toggle('actif', actif);
     $('cadre-lot').textContent = actif ? 'Fin du lot' : 'Lot';
     $('panneau-cadre').classList.toggle('lot', actif);
@@ -1847,6 +1915,7 @@
     var c = catalogue[i];
     var saisi = parseInt($('cadre-num').value.replace(/\D/g, ''), 10);
     if ($('cadre-num').value.trim() && !(saisi > 0)) { $('cadre-msg').textContent = 'Numéro d\'enchère invalide.'; return; }
+    if (modeNR) { cadreNonRegle(c, saisi > 0 ? saisi : 0, this); return; }
     var num = saisi > 0 ? saisi : null;
     // Lot du scan encore vide + numéro tapé : le numéro tapé l'emporte, on passe en lot de cadres sur ce numéro
     if (lot && !lot.n && num && num !== lot.num) { lot = null; if (!cadreLot) cadreLot = { num: 0, n: 0 }; majEncheres(); majCadreLot(); }
