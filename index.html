@@ -1809,11 +1809,11 @@
     var nr = !!modeNR;
     $('panneau-cadre').classList.toggle('nr', nr);
     document.querySelector('label[for=cadre-num]').textContent = nr
-      ? 'Numéro d\'enchère (seulement si la même carte a été vendue plusieurs fois)'
+      ? 'Numéro d\'enchère du cadre non payé (obligatoire)'
       : 'Numéro d\'enchère du cadre';
     $('cadre-ok').textContent = nr ? 'Passer en non régulé' : 'Ajouter la carte du cadre';
     $('cadre-lot').hidden = nr || !!(lot && lot.n);
-    $('cadre-num').placeholder = nr ? 'facultatif' : 'ex. 158';
+    $('cadre-num').placeholder = nr ? 'obligatoire, ex. 158' : 'ex. 158';
   }
   $('btn-cadre-nr').onclick = function () { $('btn-cadre').onclick(); };
   $('btn-cadre').onclick = function () {
@@ -1848,10 +1848,13 @@
     var libres = memes.filter(function (l) { return !l.nr; });
     if (!libres.length) {
       bip(300, 0.25);
+      var ailleurs = lignes.filter(function (l) { return estCadreCatalogue(l) && !l.envoi && l.carte === c.carte && l.num !== num; })
+        .map(function (l) { return l.num; }).filter(function (x, k, t) { return t.indexOf(x) === k; });
       msg.textContent = memes.length
-        ? nom + ' : déjà en non régulé' + (num ? '' : ' (enchère #' + memes.map(function (l) { return l.num; }).join(', #') + ')') + '.'
-        : nom + (num ? ' n\'est pas saisi en cadre sur l\'enchère #' + num : ' n\'a pas été saisi en cadre sur ce live') +
-          '. Il faut l\'avoir ajouté avec « Cadre » à l\'étape 1.';
+        ? nom + ' (enchère #' + num + ') : déjà en non régulé.'
+        : ailleurs.length
+          ? nom + ' n\'est pas sur l\'enchère #' + num + ' : il a été saisi sur l\'enchère #' + ailleurs.join(', #') + '. Vérifie le numéro.'
+          : nom + ' n\'a pas été saisi en cadre sur ce live. Il faut l\'avoir ajouté avec « Cadre » à l\'étape 1.';
       return;
     }
     var nums = libres.map(function (l) { return l.num; }).filter(function (x, k, t) { return t.indexOf(x) === k; });
@@ -1915,7 +1918,17 @@
     var c = catalogue[i];
     var saisi = parseInt($('cadre-num').value.replace(/\D/g, ''), 10);
     if ($('cadre-num').value.trim() && !(saisi > 0)) { $('cadre-msg').textContent = 'Numéro d\'enchère invalide.'; return; }
-    if (modeNR) { cadreNonRegle(c, saisi > 0 ? saisi : 0, this); return; }
+    if (modeNR) {
+      // étape 2 : le numéro d'enchère est obligatoire, il désigne la vente qui n'a pas été payée
+      if (!(saisi > 0)) {
+        bip(300, 0.25);
+        $('cadre-msg').textContent = 'Tape le numéro d\'enchère du cadre non payé.';
+        $('cadre-num').focus();
+        return;
+      }
+      cadreNonRegle(c, saisi, this);
+      return;
+    }
     var num = saisi > 0 ? saisi : null;
     // Lot du scan encore vide + numéro tapé : le numéro tapé l'emporte, on passe en lot de cadres sur ce numéro
     if (lot && !lot.n && num && num !== lot.num) { lot = null; if (!cadreLot) cadreLot = { num: 0, n: 0 }; majEncheres(); majCadreLot(); }
