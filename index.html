@@ -437,6 +437,7 @@
   // Les textes restent écrits en français dans le code ; en allemand, chaque texte affiché est traduit au vol
   // (morceaux connus remplacés, du plus long au plus court). Les noms de cartes et de lives ne sont pas touchés.
   var LANGUE = lire('svl-langue') === 'de' ? 'de' : 'fr';
+  var PROFIL = lire('svl-profil') === 'DE' ? 'DE' : 'FR';   // accès de l'équipe ouvert par le code : France ou Allemagne
   var TEXTES_DE = [
     // accueil et départ
     ['Scan ventes live', 'Scan Live-Verkäufe'],
@@ -476,6 +477,9 @@
     ['Code d\'accès incorrect', 'Falscher Zugangscode'],
     ['Tape d\'abord le code d\'accès.', 'Gib zuerst den Zugangscode ein.'],
     ['Connexion…', 'Verbindung …'],
+    ['Vérification du code…', 'Code wird geprüft …'],
+    ['Vérification impossible : ', 'Prüfung nicht möglich: '],
+    ['Accès Allemagne', 'Zugang Deutschland'],
     ['Jour', 'Tag'], ['Mois', 'Monat'], ['Année', 'Jahr'],
     ['janvier', 'Januar'], ['février', 'Februar'], ['mars', 'März'], ['avril', 'April'], ['mai', 'Mai'], ['juin', 'Juni'],
     ['juillet', 'Juli'], ['août', 'August'], ['septembre', 'September'], ['octobre', 'Oktober'], ['novembre', 'November'], ['décembre', 'Dezember'],
@@ -1481,6 +1485,16 @@
   $('code').value = lire('svl-code');
   if (lire('svl-chaine')) $('chaine').value = lire('svl-chaine');
   if (lire('svl-pays') === 'DE') $('stock-pays').value = 'DE';
+  // accès France ou Allemagne : chaînes, stock et Bénéfices proposés selon le code tapé
+  (function () {
+    var de = PROFIL === 'DE', ch = $('chaine');
+    Array.prototype.slice.call(ch.options).forEach(function (o) { if ((o.value === 'DE') !== de) ch.removeChild(o); });
+    if (de) ch.value = 'DE';
+    $('stock-pays').value = de ? 'DE' : 'FR';
+    var bn = document.querySelector('.mode[data-mode=benefices]');
+    if (bn) bn.style.display = de ? 'none' : '';
+    if (de) $('msg-menu').textContent = 'Accès Allemagne';
+  })();
   (function () {
     var d = new Date(); d.setHours(d.getHours() - 6); // après minuit, on reste sur le live de la veille
     $('date').value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
@@ -1555,13 +1569,35 @@
       var code = $('code').value.trim();
       if (!code) { $('msg-menu').textContent = 'Tape d\'abord le code d\'accès.'; return; }
       var m = b.dataset.mode;
+      if (code !== lire('svl-profil-code')) {
+        // nouveau code : le serveur dit s'il ouvre l'accès France ou l'accès Allemagne
+        session.code = code; session.mode = m;
+        $('msg-menu').textContent = 'Vérification du code…';
+        appeler('profil').then(function (r) {
+          var p = r && r.profil === 'DE' ? 'DE' : 'FR';
+          ecrire('svl-code', code); ecrire('svl-profil', p); ecrire('svl-profil-code', code);
+          if (p !== PROFIL) {
+            // changement d'accès : la langue et les choix proposés suivent le code
+            ecrire('svl-langue', p === 'DE' ? 'de' : 'fr');
+            location.reload();
+            return;
+          }
+          $('msg-menu').textContent = '';
+          b.onclick();
+        }).catch(function (e) {
+          var msg = String(e && e.message || e);
+          $('msg-menu').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect.' : 'Vérification impossible : ' + msg;
+        });
+        return;
+      }
+      if (PROFIL === 'DE' && m === 'benefices') return;
       session.code = code; session.mode = m;
       if (m === 'prix') { ouvrirPrix(); return; }
       if (m === 'benefices') { ouvrirBenefices(); return; }
       $('msg-menu').textContent = '';
-      $('titre-depart').textContent = MODES[m].titre;
+      $('titre-depart').textContent = MODES[m].titre + (m === 'stock' ? ' · ' + (PROFIL === 'DE' ? 'Allemagne' : 'France') : '');
       $('champs-live').hidden = (m === 'stock');
-      $('champ-pays').hidden = (m !== 'stock');
+      $('champ-pays').hidden = true;   // le stock suit l'accès : France ou Allemagne
       $('lib-date').textContent = MODES[m].date;
       // Rentabilité : seulement un live passé ou en cours, les dates à venir ne sont pas proposées
       var v = $('date').value.split('-');
