@@ -124,6 +124,9 @@
   #panneau-cadre.lot { border-color: #a78bfa; }
   #panneau-cadre .ligne button { flex: 1; }
   #btn-cadre { background: color-mix(in srgb, #f2b33d 25%, var(--carte)); border-color: #f2b33d; }
+  .langue { display: flex; gap: 8px; margin: 0 0 12px; }
+  .langue button { flex: 1; padding: 8px; font-size: 14px; }
+  .langue button.actif { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   #btn-cadre-nr { grid-column: 1 / -1; background: color-mix(in srgb, #f2b33d 25%, var(--carte)); border-color: #f2b33d; }
   #panneau-cadre.nr #cadre-ok { background: var(--alerte); border-color: var(--alerte); color: #10151c; font-weight: 600; }
   #btn-lot.actif { background: #a78bfa; border-color: #a78bfa; color: #10151c; font-weight: 600; }
@@ -221,6 +224,10 @@
 
 <section id="ecran-menu">
   <h1>Scan cartes gradées</h1>
+  <div class="langue notr" id="langue" role="group" aria-label="Langue / Sprache">
+    <button type="button" data-l="fr">Français</button>
+    <button type="button" data-l="de">Deutsch</button>
+  </div>
   <label for="code">Code d'accès</label>
   <input id="code" type="password" inputmode="numeric" autocomplete="off">
   <div class="modes">
@@ -257,7 +264,7 @@
   <div id="champs-live">
     <label for="chaine">Chaîne</label>
     <select id="chaine">
-      <option>MAIN</option><option>BIS</option><option>OSMO</option><option>PROTECH</option>
+      <option>MAIN</option><option>BIS</option><option>OSMO</option><option>PROTECH</option><option>DE</option>
     </select>
     <label for="jour" id="lib-date">Date du live</label>
     <div class="date3">
@@ -266,6 +273,13 @@
       <select id="annee" aria-label="Année"></select>
     </div>
     <input id="date" type="hidden">
+  </div>
+  <div id="champ-pays" hidden>
+    <label for="stock-pays">Stock</label>
+    <select id="stock-pays">
+      <option value="FR">France</option>
+      <option value="DE">Allemagne</option>
+    </select>
   </div>
   <label for="precision" id="lib-precision">Précision (facultatif, ex. 17h ou GRADEE JAP)</label>
   <input id="precision" type="text" autocomplete="off">
@@ -391,7 +405,7 @@
     }, { passive: true });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) { document.addEventListener(t, relacher, { passive: true }); });
   })();
-  var session = { code: '', live: '', mode: 'renta' };
+  var session = { code: '', live: '', mode: 'renta', pays: 'FR' };
   var PRIX_CADRE = 15;   // € HT, ajouté quand le code-barres d'un cadre est vu avec le QR code
   var fenetre = null;    // carte qui vient d'être lue : pendant un court instant on cherche le code-barres d'un cadre
   var modeNR = false;    // vrai quand on scanne les ventes non réglées
@@ -419,12 +433,360 @@
   function lire(cle) { try { return localStorage.getItem(cle) || ''; } catch (e) { return ''; } }
   function ecrire(cle, v) { try { localStorage.setItem(cle, v); } catch (e) {} }
 
+  // ---- Langue de l'interface : français ou allemand, choisie sur l'accueil et gardée sur ce téléphone ----
+  // Les textes restent écrits en français dans le code ; en allemand, chaque texte affiché est traduit au vol
+  // (morceaux connus remplacés, du plus long au plus court). Les noms de cartes et de lives ne sont pas touchés.
+  var LANGUE = lire('svl-langue') === 'de' ? 'de' : 'fr';
+  var TEXTES_DE = [
+    // accueil et départ
+    ['Scan ventes live', 'Scan Live-Verkäufe'],
+    ['Scan cartes gradées', 'Gradierte Karten scannen'],
+    ['Code d\'accès', 'Zugangscode'],
+    ['Langue', 'Sprache'],
+    ['Rentabilité', 'Rentabilität'],
+    ['Scanner les cartes vendues après un live', 'Nach einem Live die verkauften Karten scannen'],
+    ['Scanner les cartes d\'un stream et sortir le CSV Whatnot', 'Karten eines Streams scannen und die Whatnot-CSV erstellen'],
+    ['Inventaire', 'Lager'],
+    ['Faire entrer des cartes en stock', 'Karten ins Lager aufnehmen'],
+    ['Prix plancher', 'Mindestpreis'],
+    ['Scanner une carte pour savoir à partir de quel prix on gagne de l\'argent', 'Eine Karte scannen, um zu sehen, ab welchem Preis wir Gewinn machen'],
+    ['Bénéfices', 'Gewinne'],
+    ['Le calendrier des lives et ce qu\'ils ont rapporté', 'Kalender der Lives und was sie eingebracht haben'],
+    ['Cet espace est réservé. Tape le mot de passe des bénéfices pour l\'ouvrir.', 'Dieser Bereich ist geschützt. Gib das Gewinn-Passwort ein, um ihn zu öffnen.'],
+    ['Ouvrir', 'Öffnen'],
+    ['Oublier le mot de passe sur ce téléphone', 'Passwort auf diesem Handy vergessen'],
+    ['Retour au menu', 'Zurück zum Menü'],
+    ['Chaîne', 'Kanal'],
+    ['Date du live', 'Datum des Lives'],
+    ['Date du stream', 'Datum des Streams'],
+    ['Précision (facultatif, ex. 17h ou GRADEE JAP)', 'Zusatz (optional, z. B. 17 Uhr oder GRADEE JAP)'],
+    ['Lot (facultatif, ex. Retour PCA boîte 12)', 'Los (optional, z. B. Rückgabe PCA Box 12)'],
+    ['Numéro de la première enchère (facultatif)', 'Nummer der ersten Auktion (optional)'],
+    ['On scanne dans l\'ordre de passage : 1, 2, 3… Laisse vide pour commencer à 1. Un live déjà commencé reprend tout seul à la suite.',
+      'Gescannt wird in der Reihenfolge der Auktionen: 1, 2, 3 … Leer lassen, um bei 1 zu beginnen. Ein schon begonnenes Live wird automatisch fortgesetzt.'],
+    ['Commencer à scanner', 'Scannen starten'],
+    ['Retour', 'Zurück'],
+    ['Stock', 'Lager'],
+    ['France', 'Frankreich'],
+    ['Allemagne', 'Deutschland'],
+    ['Il manque la date.', 'Das Datum fehlt.'],
+    ['Ce live n\'a pas encore eu lieu. En Rentabilité, choisis un live passé ou en cours.', 'Dieses Live hat noch nicht stattgefunden. Wähle bei Rentabilität ein vergangenes oder laufendes Live.'],
+    ['Code d\'accès incorrect. Reviens au menu pour le corriger.', 'Falscher Zugangscode. Geh zurück zum Menü, um ihn zu korrigieren.'],
+    ['Code d\'accès incorrect.', 'Falscher Zugangscode.'],
+    ['Code d\'accès incorrect', 'Falscher Zugangscode'],
+    ['Tape d\'abord le code d\'accès.', 'Gib zuerst den Zugangscode ein.'],
+    ['Connexion…', 'Verbindung …'],
+    ['Jour', 'Tag'], ['Mois', 'Monat'], ['Année', 'Jahr'],
+    ['janvier', 'Januar'], ['février', 'Februar'], ['mars', 'März'], ['avril', 'April'], ['mai', 'Mai'], ['juin', 'Juni'],
+    ['juillet', 'Juli'], ['août', 'August'], ['septembre', 'September'], ['octobre', 'Oktober'], ['novembre', 'November'], ['décembre', 'Dezember'],
+    // écran de scan
+    ['carte(s)', 'Karte(n)'],
+    ['vendue(s)', 'verkauft'],
+    ['listée(s)', 'gelistet'],
+    ['en stock', 'auf Lager'],
+    ['1 · Toutes les cartes', '1 · Alle Karten'],
+    ['2 · Non régulés', '2 · Nicht bezahlt'],
+    ['Cadre non régulé (choisir dans le catalogue)', 'Rahmen nicht bezahlt (im Katalog wählen)'],
+    ['Lampe allumée', 'Lampe an'],
+    ['Lampe', 'Lampe'],
+    ['Changer de caméra', 'Kamera wechseln'],
+    ['Vise le QR code d\'un boîtier', 'Ziele auf den QR-Code eines Slabs'],
+    ['Vise le QR code d\'une carte', 'Ziele auf den QR-Code einer Karte'],
+    ['La carte s\'enregistre toute seule.', 'Die Karte wird automatisch gespeichert.'],
+    ['Prendre une photo', 'Foto aufnehmen'],
+    ['Taper le numéro', 'Nummer eintippen'],
+    ['N° de certificat', 'Zertifikatsnummer'],
+    ['Annuler le dernier', 'Letzten rückgängig machen'],
+    ['Confirmer l\'annulation', 'Rückgängig bestätigen'],
+    ['Rien à annuler', 'Nichts rückgängig zu machen'],
+    ['Dernier scan supprimé', 'Letzter Scan gelöscht'],
+    ['Transfert annulé', 'Verschiebung rückgängig gemacht'],
+    ['Annulation impossible', 'Rückgängig nicht möglich'],
+    ['Terminer', 'Beenden'],
+    ['Télécharger le CSV Whatnot', 'Whatnot-CSV herunterladen'],
+    ['Numéro suivant', 'Nächste Nummer'], ['Numéro précédent', 'Vorherige Nummer'],
+    ['Prochaine enchère : #', 'Nächste Auktion: #'],
+    ['Prochaine enchère : ', 'Nächste Auktion: '],
+    [' · prochaine enchère : #', ' · nächste Auktion: #'],
+    ['Cadres : #', 'Rahmen: #'],
+    [' (sautés)', ' (übersprungen)'],
+    ['Fin du lot', 'Los beenden'],
+    [' (lot) · ', ' (Los) · '],
+    [' (lot) : ', ' (Los): '],
+    [' : lot', ': Los'],
+    ['Lot annulé (aucune carte)', 'Los abgebrochen (keine Karte)'],
+    ['Scanne toutes les cartes du lot, puis appuie sur « Fin du lot ».', 'Scanne alle Karten des Loses und tippe dann auf „Los beenden“.'],
+    ['Étape 1 : scanne toutes les cartes du live', 'Schritt 1: scanne alle Karten des Lives'],
+    ['Chaque carte scannée est comptée comme vendue.', 'Jede gescannte Karte zählt als verkauft.'],
+    ['Étape 2 : rescanne les non régulés', 'Schritt 2: scanne die nicht bezahlten erneut'],
+    ['Ce sont les cartes qui restent une fois les colis finis. Elles sortent du calcul et retournent en stock. Cadre sans QR : touche-le dans la liste.',
+      'Das sind die Karten, die übrig bleiben, wenn alle Pakete fertig sind. Sie werden aus der Berechnung genommen und gehen zurück ins Lager. Rahmen ohne QR: tippe ihn in der Liste an.'],
+    // liste des cartes
+    ['Carte à compléter', 'Karte noch zu ergänzen'],
+    ['Dans un cadre, QR non scanné', 'Im Rahmen, QR nicht gescannt'],
+    ['Certificat enregistré. Carte à compléter quand PCA ouvrira son API.', 'Zertifikat gespeichert. Die Karte wird ergänzt, sobald PCA seine API öffnet.'],
+    ['Certificat ', 'Zertifikat '],
+    [' · certificat ', ' · Zertifikat '],
+    ['certificat ', 'Zertifikat '],
+    [' · cadre · QR non scanné', ' · Rahmen · QR nicht gescannt'],
+    [' · cadre', ' · Rahmen'],
+    [' · lot', ' · Los'],
+    [' · non régulé', ' · nicht bezahlt'],
+    [' non régulé(s)', ' nicht bezahlt'],
+    [' carte(s) en cours d\'enregistrement…', ' Karte(n) werden gespeichert …'],
+    [' carte(s) pas encore enregistrée(s), nouvel essai… (', ' Karte(n) noch nicht gespeichert, neuer Versuch … ('],
+    [' carte(s) en cours.', ' Karte(n) in Bearbeitung.'],
+    [' carte(s)', ' Karte(n)'],
+    ['Touche le numéro d\'une carte pour le corriger.', 'Tippe auf die Nummer einer Karte, um sie zu korrigieren.'],
+    ['Cadre sans QR ou QR illisible : touche la carte dans la liste pour la passer en non régulé.', 'Rahmen ohne QR oder unlesbarer QR: tippe auf die Karte in der Liste, um sie als nicht bezahlt zu markieren.'],
+    // correction du numéro d'enchère
+    ['Vrai numéro d\'enchère', 'Richtige Auktionsnummer'],
+    ['Décaler aussi les cartes scannées après elle', 'Auch die danach gescannten Karten verschieben'],
+    ['À cocher quand le streameur a oublié une carte : toutes les suivantes avancent du même écart.', 'Ankreuzen, wenn der Streamer eine Karte vergessen hat: alle folgenden rücken um denselben Abstand vor.'],
+    ['Valider', 'Bestätigen'],
+    ['Annuler', 'Abbrechen'],
+    ['Tout le lot (', 'Das ganze Los ('],
+    [' cartes) change de numéro. ', ' Karten) bekommt eine neue Nummer. '],
+    ['Impossible : l\'enchère #', 'Nicht möglich: Auktion #'],
+    [' a déjà une carte scannée. Vérifie le numéro.', ' hat schon eine gescannte Karte. Prüfe die Nummer.'],
+    [' a déjà ', ' hat schon '],
+    ['un cadre', 'einen Rahmen'],
+    ['une carte', 'eine Karte'],
+    [' enchères)', ' Auktionen)'],
+    [' Aucune carte scannée après celle-ci.', ' Nach dieser wurde keine Karte gescannt.'],
+    [' Les cadres saisis avec leur numéro ne bougent pas.', ' Mit Nummer erfasste Rahmen bleiben, wo sie sind.'],
+    ['Attends la fin de l\'enregistrement des cartes en cours.', 'Warte, bis die laufenden Karten gespeichert sind.'],
+    ['Attends la fin de l\'enregistrement.', 'Warte, bis alles gespeichert ist.'],
+    ['Attends la fin de l\'enregistrement', 'Warte, bis alles gespeichert ist'],
+    ['Termine d\'abord le lot', 'Schließe zuerst das Los ab'],
+    ['Appuie sur « Fin du lot », puis touche la carte à corriger.', 'Tippe auf „Los beenden“ und dann auf die zu korrigierende Karte.'],
+    [' · enchère #', ' · Auktion #'],
+    ['Tape un numéro d\'enchère valide.', 'Gib eine gültige Auktionsnummer ein.'],
+    ['Rien n\'a changé : l\'enchère #', 'Nichts geändert: Auktion #'],
+    ['. Corrige d\'abord celle-là, ou vérifie le numéro.', '. Korrigiere zuerst diese oder prüfe die Nummer.'],
+    ['Carte introuvable sur ce live : recharge la page.', 'Karte in diesem Live nicht gefunden: Seite neu laden.'],
+    ['Numéro invalide.', 'Ungültige Nummer.'],
+    [' carte(s) renumérotée(s)', ' Karte(n) neu nummeriert'],
+    ['Correction impossible : ', 'Korrektur nicht möglich: '],
+    // non régulés
+    ['Cadre saisi sans QR. ', 'Rahmen ohne QR erfasst. '],
+    ['Cette vente est en non régulé. Remets-la en vendue si elle a finalement été payée.', 'Dieser Verkauf ist als nicht bezahlt markiert. Setze ihn wieder auf verkauft, wenn er doch bezahlt wurde.'],
+    ['Vente non payée : elle sort du calcul', 'Nicht bezahlter Verkauf: er wird aus der Berechnung genommen'],
+    [' et la carte retourne en stock.', ' und die Karte geht zurück ins Lager.'],
+    [' cartes) suit.', ' Karten) folgt.'],
+    ['Remettre en vendue', 'Wieder auf verkauft setzen'],
+    ['Passer en non régulé', 'Als nicht bezahlt markieren'],
+    ['Non régulé : ', 'Nicht bezahlt: '],
+    ['Remise en vendue : ', 'Wieder verkauft: '],
+    ['Remise en vendue…', 'Wird wieder auf verkauft gesetzt …'],
+    ['Remise en vendue', 'Wieder verkauft'],
+    ['Passage en non régulé…', 'Wird als nicht bezahlt markiert …'],
+    [' cartes du lot', ' Karten des Loses'],
+    [' · retirée des ventes du live', ' · aus den Verkäufen des Lives entfernt'],
+    [' · comptée à nouveau comme vendue', ' · wieder als verkauft gezählt'],
+    ['Retirée des ventes du live (n° ', 'Aus den Verkäufen des Lives entfernt (Nr. '],
+    [') et remise en stock.', ') und zurück ins Lager.'],
+    ['Déjà en non régulé', 'Schon als nicht bezahlt markiert'],
+    ['Cette carte n\'est pas dans ce live', 'Diese Karte ist nicht in diesem Live'],
+    ['Elle a été scannée sur ', 'Sie wurde gescannt in '],
+    [' : jamais scanné comme vendu ici.', ': hier nie als verkauft gescannt.'],
+    ['Numéro d\'enchère du cadre non payé (obligatoire)', 'Auktionsnummer des nicht bezahlten Rahmens (Pflichtfeld)'],
+    ['obligatoire, ex. 158', 'Pflichtfeld, z. B. 158'],
+    ['Tape le numéro d\'enchère du cadre non payé.', 'Gib die Auktionsnummer des nicht bezahlten Rahmens ein.'],
+    [') : déjà en non régulé.', '): schon als nicht bezahlt markiert.'],
+    [' n\'est pas sur l\'enchère #', ' ist nicht bei Auktion #'],
+    [' : il a été saisi sur l\'enchère #', ': er wurde erfasst bei Auktion #'],
+    [' n\'a pas été saisi en cadre sur ce live. Il faut l\'avoir ajouté avec « Cadre » à l\'étape 1.',
+      ' wurde in diesem Live nicht als Rahmen erfasst. Er muss in Schritt 1 mit „Rahmen“ hinzugefügt worden sein.'],
+    [' est vendu sur plusieurs enchères (#', ' wurde in mehreren Auktionen verkauft (#'],
+    [') : tape le numéro de celle qui n\'est pas payée.', '): gib die Nummer der nicht bezahlten ein.'],
+    ['Cadre introuvable sur ce live : recharge la page.', 'Rahmen in diesem Live nicht gefunden: Seite neu laden.'],
+    [') passé en non régulé', ') als nicht bezahlt markiert'],
+    [', avec tout son lot (', ', mit dem ganzen Los ('],
+    [' cartes)', ' Karten)'],
+    ['. Choisis le suivant, ou « Fermer ».', '. Wähle den nächsten oder „Schließen“.'],
+    // cadres
+    ['Cadre ajouté', 'Rahmen hinzugefügt'],
+    ['Cadre compris', 'Rahmen inklusive'],
+    ['Numéro d\'enchère du cadre', 'Auktionsnummer des Rahmens'],
+    ['Ajouter la carte du cadre', 'Karte im Rahmen hinzufügen'],
+    ['Rechercher : nom, numéro ou extension', 'Suchen: Name, Nummer oder Set'],
+    ['Cartes en cadre', 'Karten im Rahmen'],
+    ['Fermer', 'Schließen'],
+    ['Pas d\'image', 'Kein Bild'],
+    [' choisie', ' gewählt'],
+    [' cadre(s) · touche la carte puis « ', ' Rahmen · tippe auf die Karte, dann auf „'],
+    ['Chargement du catalogue…', 'Katalog wird geladen …'],
+    ['Catalogue illisible : ', 'Katalog nicht lesbar: '],
+    ['Numéro du lot, ex. 56', 'Nummer des Loses, z. B. 56'],
+    ['Lot de cadres : tape le numéro d\'enchère, puis ajoute les cadres un par un.', 'Los von Rahmen: gib die Auktionsnummer ein und füge die Rahmen einzeln hinzu.'],
+    ['Lot de cadres annulé.', 'Los von Rahmen abgebrochen.'],
+    [' cadre(s). Ajoute le suivant, ou « Fin du lot ».', ' Rahmen. Füge den nächsten hinzu oder „Los beenden“.'],
+    [' cadre(s).', ' Rahmen.'],
+    ['Touche d\'abord une carte dans la liste.', 'Tippe zuerst auf eine Karte in der Liste.'],
+    ['Numéro d\'enchère invalide.', 'Ungültige Auktionsnummer.'],
+    ['Numéro d\'enchère invalide', 'Ungültige Auktionsnummer'],
+    ['Tape le numéro d\'enchère du lot.', 'Gib die Auktionsnummer des Loses ein.'],
+    [' est déjà saisie. Vérifie le numéro (ou utilise Lot).', ' ist schon erfasst. Prüfe die Nummer (oder nutze Los).'],
+    [' · enregistrement…', ' · wird gespeichert …'],
+    [' ajouté. Ajoute le suivant, ou « Fermer » pour scanner les autres cartes.', ' hinzugefügt. Füge den nächsten hinzu oder „Schließen“, um die anderen Karten zu scannen.'],
+    ['Cadre #', 'Rahmen #'],
+    [' (cadre)', ' (Rahmen)'],
+    ['. Vérifie le numéro.', '. Prüfe die Nummer.'],
+    ['Corrige le numéro avec le bouton +.', 'Korrigiere die Nummer mit der Taste +.'],
+    ['ex. 158', 'z. B. 158'],
+    ['Cadre', 'Rahmen'],
+    ['Lot', 'Los'],
+    // messages de scan
+    ['QR code non reconnu', 'QR-Code nicht erkannt'],
+    ['Ce n\'est ni un boîtier PCA, ni un CollectAura, ni un PSA.', 'Das ist weder ein PCA- noch ein CollectAura- noch ein PSA-Slab.'],
+    ['Déjà scannée (n° ', 'Schon gescannt (Nr. '],
+    ['Déjà scannée sur ', 'Schon gescannt in '],
+    [' · déjà scannée sur ', ' · schon gescannt in '],
+    ['Déjà scannée', 'Schon gescannt'],
+    ['Déjà ', 'Schon '],
+    ['vendue sur ', 'verkauft in '],
+    ['PCA n° ', 'PCA Nr. '],
+    ['Recherche de la carte…', 'Karte wird gesucht …'],
+    [' · prix à relever', ' · Preis noch zu erfassen'],
+    ['Transférée : stock ', 'Verschoben: Lager '],
+    [' → stock ', ' → Lager '],
+    ['Carte introuvable chez CollectAura', 'Karte bei CollectAura nicht gefunden'],
+    ['PCA : en attente de l\'API', 'PCA: wartet auf die API'],
+    ['PSA : carte absente de l\'onglet PSA', 'PSA: Karte fehlt im PSA-Register'],
+    ['PSA : prix à relever sur la photo', 'PSA: Preis vom Foto ablesen'],
+    ['Rien n\'est enregistré. Touche « Terminer » et retape le code.', 'Nichts gespeichert. Tippe auf „Beenden“ und gib den Code erneut ein.'],
+    ['Touche « Terminer » et retape le code.', 'Tippe auf „Beenden“ und gib den Code erneut ein.'],
+    ['Enchère #', 'Auktion #'],
+    ['Enchère ', 'Auktion '],
+    ['L\'enchère #', 'Auktion #'],
+    [' (enchère #', ' (Auktion #'],
+    ['Impossible : ', 'Nicht möglich: '],
+    // caméra et photo
+    ['navigateur sans accès caméra', 'Browser ohne Kamerazugriff'],
+    ['Caméra en direct indisponible', 'Live-Kamera nicht verfügbar'],
+    ['Utilise « Prendre une photo ». Détail : ', 'Nutze „Foto aufnehmen“. Detail: '],
+    ['Garde celle où le QR code est net.', 'Nimm die, bei der der QR-Code scharf ist.'],
+    ['Caméra ', 'Kamera '],
+    ['aucun QR', 'kein QR'],
+    ['Lecture de la photo…', 'Foto wird gelesen …'],
+    ['Aucun QR code lisible sur la photo', 'Kein lesbarer QR-Code auf dem Foto'],
+    ['Rapproche-toi du QR code et évite les reflets.', 'Geh näher an den QR-Code und vermeide Spiegelungen.'],
+    // prix plancher
+    ['Le prix de vente minimum sur Whatnot s\'affiche ici, en euros entiers.', 'Der Mindestverkaufspreis auf Whatnot erscheint hier, in ganzen Euro.'],
+    ['Carte PCA', 'PCA-Karte'],
+    ['Le nom de la carte n\'est pas connu tant que PCA n\'a pas ouvert son API.', 'Der Kartenname ist unbekannt, solange PCA seine API nicht geöffnet hat.'],
+    ['Carte française', 'Französische Karte'],
+    ['Pas de prix plancher pour les cartes françaises.', 'Kein Mindestpreis für französische Karten.'],
+    ['Carte introuvable', 'Karte nicht gefunden'],
+    ['CollectAura ne connaît pas ce certificat.', 'CollectAura kennt dieses Zertifikat nicht.'],
+    ['Taux de change indisponible', 'Wechselkurs nicht verfügbar'],
+    ['Réessaie dans un instant.', 'Versuche es gleich noch einmal.'],
+    ['Pas de prix pour cette carte', 'Kein Preis für diese Karte'],
+    ['Carte PSA pas encore enregistrée.', 'PSA-Karte noch nicht erfasst.'],
+    ['Pas de prix', 'Kein Preis'],
+    ['Recherche impossible', 'Suche nicht möglich'],
+    // listing
+    ['Préparation du fichier…', 'Datei wird vorbereitet …'],
+    [' carte(s) dans le fichier sur ', ' Karte(n) in der Datei von '],
+    [' scannée(s).', ' gescannt.'],
+    [' carte(s) sans nom non incluse(s) (PCA en attente de l\'API).', ' Karte(n) ohne Namen nicht enthalten (PCA wartet auf die API).'],
+    [' Sans image dans INVENTAIRE : ', ' Ohne Bild in INVENTAIRE: '],
+    [' INVENTAIRE illisible (', ' INVENTAIRE nicht lesbar ('],
+    [') : aucune image.', '): keine Bilder.'],
+    ['Fichier impossible : ', 'Datei nicht möglich: '],
+    // bénéfices (écran du gérant)
+    ['Mot de passe incorrect.', 'Falsches Passwort.'],
+    ['Il manque le mot de passe.', 'Das Passwort fehlt.'],
+    ['Mot de passe', 'Passwort'],
+    ['Lecture des lives…', 'Lives werden gelesen …'],
+    ['7 jours', '7 Tage'], ['30 jours', '30 Tage'], ['3 mois', '3 Monate'], ['12 mois', '12 Monate'],
+    ['Aucun live sur cette période.', 'Kein Live in diesem Zeitraum.'],
+    ['Aucun live calculé pour l\'instant. Ils arrivent du PC chaque matin.', 'Noch kein Live berechnet. Die Zahlen kommen jeden Morgen vom PC.'],
+    ['Bénéfice net HT', 'Nettogewinn'],
+    ['Bénéfice par période', 'Gewinn pro Zeitraum'],
+    ['Bénéfice', 'Gewinn'],
+    ['CA brut TTC', 'Bruttoumsatz'],
+    ['CA net HT', 'Nettoumsatz'],
+    ['Coûts HT', 'Kosten (netto)'],
+    ['Ventes payantes', 'Bezahlte Verkäufe'],
+    ['Ventes', 'Verkäufe'],
+    ['Panier moyen', 'Durchschn. Warenkorb'],
+    ['Perte', 'Verlust'],
+    ['Meilleur live', 'Bestes Live'],
+    ['Moins bon', 'Schwächstes'],
+    ['Par chaîne', 'Pro Kanal'],
+    ['Fiabilité du bénéfice', 'Zuverlässigkeit des Gewinns'],
+    ['vs période précédente', 'vs. Vorzeitraum'],
+    ['vs précédente', 'vs. Vorzeitraum'],
+    ['Au-dessus de la ligne, un gain. En dessous, une perte.', 'Über der Linie ein Gewinn, darunter ein Verlust.'],
+    ['Bénéfice net HT sur la période.', 'Nettogewinn im Zeitraum.'],
+    // ponctuation française
+    ['« ', '„'], [' »', '“'], [' sur ', ' von ']
+  ];
+  var tableDE = null, reDE = null, LETTRE = /[A-Za-zÀ-ÿ0-9]/;
+  function traduire(s) {
+    if (LANGUE !== 'de' || !s || !/[A-Za-zÀ-ÿ«»]/.test(s)) return s;
+    if (!reDE) {
+      tableDE = {};
+      TEXTES_DE.sort(function (a, b) { return b[0].length - a[0].length; });
+      TEXTES_DE.forEach(function (p) { tableDE[p[0]] = p[1]; });
+      reDE = new RegExp(TEXTES_DE.map(function (p) { return p[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|'), 'g');
+    }
+    return s.replace(reDE, function (m, pos, tout) {
+      // un morceau qui commence ou finit par une lettre doit être un mot entier (« Lot » ne touche pas « Lotad »)
+      if (LETTRE.test(m.charAt(0)) && pos > 0 && LETTRE.test(tout.charAt(pos - 1))) return m;
+      var fin = pos + m.length;
+      if (LETTRE.test(m.charAt(m.length - 1)) && fin < tout.length && LETTRE.test(tout.charAt(fin))) return m;
+      return tableDE[m];
+    });
+  }
+  var ATTRS_DE = ['placeholder', 'aria-label', 'title'];
+  function traduireAttrs(el) {
+    ATTRS_DE.forEach(function (a) {
+      var v = el.getAttribute && el.getAttribute(a);
+      if (v) { var t = traduire(v); if (t !== v) el.setAttribute(a, t); }
+    });
+  }
+  function traduireNoeud(n) {
+    if (n.nodeType === 3) {
+      var p = n.parentNode;
+      if (!p || p.nodeName === 'SCRIPT' || p.nodeName === 'STYLE' || (p.closest && p.closest('.notr'))) return;
+      var t = traduire(n.nodeValue);
+      if (t !== n.nodeValue) n.nodeValue = t;
+      return;
+    }
+    if (n.nodeType !== 1 || n.nodeName === 'SCRIPT' || n.nodeName === 'STYLE' || n.classList.contains('notr')) return;
+    traduireAttrs(n);
+    for (var c = n.firstChild; c; c = c.nextSibling) traduireNoeud(c);
+  }
+  if (LANGUE === 'de') {
+    document.documentElement.lang = 'de';
+    document.title = traduire(document.title);
+    traduireNoeud(document.body);
+    new MutationObserver(function (liste) {
+      liste.forEach(function (m) {
+        if (m.type === 'characterData') traduireNoeud(m.target);
+        else if (m.type === 'attributes') traduireAttrs(m.target);
+        else for (var i = 0; i < m.addedNodes.length; i++) traduireNoeud(m.addedNodes[i]);
+      });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS_DE });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#langue button'), function (b) {
+    b.classList.toggle('actif', b.dataset.l === LANGUE);
+    b.onclick = function () {
+      if (b.dataset.l === LANGUE) return;
+      ecrire('svl-langue', b.dataset.l);
+      location.reload();
+    };
+  });
+
   // ---- appel au script Google ----
   // Les lectures (prix, chargement, CSV) sont retentées une fois si le réseau décroche.
   var RELANCABLES = { prixPlancher: 1, charger: 1, csvListing: 1 };
   function appeler(fonction, donnees, dejaRelance) {
     var corps = JSON.stringify({ fn: fonction, req: Object.assign(
-      { code: session.code, live: session.live, mode: session.mode }, donnees || {}) });
+      { code: session.code, live: session.live, mode: session.mode, pays: session.pays || 'FR' }, donnees || {}) });
     return fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -918,7 +1280,11 @@
         if (r.ok) {
           l.envoi = false; l.num = r.num; l.cadre = !!r.cadre;
           if (!l.carte && r.carte) { l.carte = r.carte; l.numero = r.numero; l.note = r.note; }
-          if (lignes[0] === l && r.cadreCatalogue) {
+          if (r.transfere) {
+            bip(900, 0.08);
+            etat('ok', l.carte ? (l.carte + ' ' + (l.numero || '')).trim() : l.gradateur + ' n° ' + l.cert,
+              'Transférée : stock ' + (r.de === 'DE' ? 'Allemagne' : 'France') + ' → stock ' + (r.vers === 'DE' ? 'Allemagne' : 'France'));
+          } else if (lignes[0] === l && r.cadreCatalogue) {
             etat('ok', (l.carte + ' ' + l.numero).trim() + ' (cadre)', 'Enchère #' + l.num + ' · cadre · QR non scanné');
           } else if (lignes[0] === l) {
             if (r.ailleurs) etat('alerte', l.carte || (l.gradateur + ' n° ' + l.cert), 'Déjà scannée sur ' + r.ailleurs);
@@ -1114,6 +1480,7 @@
   // ---- départ ----
   $('code').value = lire('svl-code');
   if (lire('svl-chaine')) $('chaine').value = lire('svl-chaine');
+  if (lire('svl-pays') === 'DE') $('stock-pays').value = 'DE';
   (function () {
     var d = new Date(); d.setHours(d.getHours() - 6); // après minuit, on reste sur le live de la veille
     $('date').value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
@@ -1194,6 +1561,7 @@
       $('msg-menu').textContent = '';
       $('titre-depart').textContent = MODES[m].titre;
       $('champs-live').hidden = (m === 'stock');
+      $('champ-pays').hidden = (m !== 'stock');
       $('lib-date').textContent = MODES[m].date;
       // Rentabilité : seulement un live passé ou en cours, les dates à venir ne sont pas proposées
       var v = $('date').value.split('-');
@@ -1212,7 +1580,9 @@
   $('commencer').onclick = function () {
     var m = session.mode, date = $('date').value, precision = $('precision').value.trim(), live;
     if (m === 'stock') {
-      live = 'STOCK' + (precision ? ' ' + precision : '');
+      // stock France ou Allemagne : le pays part avec chaque appel, la session allemande s'appelle « STOCK DE »
+      session.pays = $('stock-pays').value === 'DE' ? 'DE' : 'FR';
+      live = 'STOCK' + (session.pays === 'DE' ? ' DE' : '') + (precision ? ' ' + precision : '');
     } else {
       if (!date) { $('msg-depart').textContent = 'Il manque la date.'; return; }
       if (m === 'renta' && date > aujourdhui()) {
@@ -1229,10 +1599,11 @@
     $('msg-depart').textContent = 'Connexion…';
     session.live = live;
     chargerLive().then(function () {
-      ecrire('svl-code', session.code); ecrire('svl-chaine', $('chaine').value);
+      ecrire('svl-code', session.code); ecrire('svl-chaine', $('chaine').value); ecrire('svl-pays', $('stock-pays').value);
       $('total').parentNode.hidden = false; $('plancher').hidden = true;
       ['etat', 'envoi', 'btn-annuler', 'liste'].forEach(function (id) { $(id).hidden = false; });
-      $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock' ? (precision || 'stock') : live);
+      $('nom-live').textContent = MODES[m].titre + ' · ' + (m === 'stock'
+        ? (session.pays === 'DE' ? 'Allemagne' : 'France') + (precision ? ' · ' + precision : '') : live);
       $('unite').textContent = MODES[m].unite;
       $('btn-csv').hidden = (m !== 'listing'); $('msg-csv').textContent = '';
       $('etapes').hidden = (m !== 'renta'); basculerNR(false); majEncheres();
@@ -2073,7 +2444,7 @@
     appeler('annulerDernier').then(function (r) {
       if (!r.ok) { etat('alerte', 'Rien à annuler', ''); return; }
       dernierTexte = '';
-      return chargerLive().then(function () { etat('', 'Dernier scan supprimé', 'Certificat ' + r.cert); });
+      return chargerLive().then(function () { etat('', r.transfertAnnule ? 'Transfert annulé' : 'Dernier scan supprimé', 'Certificat ' + r.cert); });
     }).catch(function (e) { etat('erreur', 'Annulation impossible', String(e && e.message || e)); })
       .then(function () { b.disabled = false; });
   };
