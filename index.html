@@ -218,6 +218,22 @@
   #ecran-menu h1 { font-size: 26px; letter-spacing: -.3px;
     background: linear-gradient(90deg, #4f9cf5, #a78bfa 55%, #f2b33d); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .retour { width: 100%; margin-top: 10px; }
+  /* Inventaire ProTech : on compte les cartons pleins */
+  #choix-inv { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 6px; }
+  #choix-inv button { padding: 12px 8px; font-size: 14px; }
+  #choix-inv button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .pt-ligne { background: var(--carte); border: 1px solid var(--trait); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
+  .pt-ligne.compte { border-color: var(--accent); }
+  .pt-nom { font-weight: 600; font-size: 14px; min-width: 0; }
+  .pt-det { grid-column: 1; font-size: 12px; color: var(--doux); font-variant-numeric: tabular-nums; }
+  .pt-det .manque { color: var(--erreur); }
+  .pt-cpt { grid-row: 1 / span 2; grid-column: 2; display: flex; align-items: center; gap: 6px; }
+  .pt-cpt button { width: 42px; height: 42px; padding: 0; font-size: 22px; line-height: 1; }
+  .pt-cpt input { width: 62px; text-align: center; padding: 9px 4px; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #pt-resume { position: sticky; bottom: 0; background: var(--fond); padding-top: 4px; }
+  #pt-resume .principal { margin-top: 8px; }
+  #pt-msg { min-height: 18px; }
 </style>
 </head>
 <body>
@@ -261,6 +277,10 @@
 
 <section id="ecran-depart" hidden>
   <h1 id="titre-depart"></h1>
+  <div id="choix-inv" role="group" aria-label="Que compter" hidden>
+    <button type="button" data-inv="cartes" aria-pressed="true">Cartes gradées</button>
+    <button type="button" data-inv="protech" aria-pressed="false">ProTech (cartons)</button>
+  </div>
   <div id="champs-live">
     <label for="chaine">Chaîne</label>
     <select id="chaine">
@@ -291,6 +311,17 @@
   <button class="principal" id="commencer">Commencer à scanner</button>
   <button class="retour" id="retour-menu">Retour</button>
   <p class="aide" id="msg-depart"></p>
+</section>
+
+<section id="ecran-protech" hidden>
+  <div class="entete"><b>Inventaire ProTech</b><span class="compteur" id="pt-total"></span></div>
+  <p class="aide" id="pt-aide">Compte les cartons pleins de chaque produit dans la réserve, puis enregistre.</p>
+  <div id="pt-liste"><div class="aide">Lecture de la liste des produits…</div></div>
+  <div id="pt-resume">
+    <button class="principal" id="pt-valider" disabled>Enregistrer l'inventaire</button>
+    <p class="aide" id="pt-msg"></p>
+  </div>
+  <button class="retour" id="pt-retour">Retour au menu</button>
 </section>
 
 <section id="ecran-scan" hidden>
@@ -1597,6 +1628,7 @@
       $('msg-menu').textContent = '';
       $('titre-depart').textContent = MODES[m].titre + (m === 'stock' ? ' · ' + (PROFIL === 'DE' ? 'Allemagne' : 'France') : '');
       $('champs-live').hidden = (m === 'stock');
+      $('choix-inv').hidden = !(m === 'stock' && PROFIL !== 'DE');   // l'inventaire ProTech reste côté France
       $('champ-pays').hidden = true;   // le stock suit l'accès : France ou Allemagne
       $('lib-date').textContent = MODES[m].date;
       // Rentabilité : seulement un live passé ou en cours, les dates à venir ne sont pas proposées
@@ -1652,6 +1684,82 @@
       $('msg-depart').textContent = msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect. Reviens au menu pour le corriger.' : msg;
     }).then(function () { $('commencer').disabled = false; });
   };
+
+  // ---- Inventaire ProTech : nombre de cartons pleins par produit (onglets PROTECH CARTONS / INVENTAIRE PROTECH) ----
+  var ptProduits = [], ptDernier = null;
+  Array.prototype.forEach.call(document.querySelectorAll('#choix-inv button'), function (b) {
+    b.onclick = function () { if (b.dataset.inv === 'protech') ouvrirProtech(); };
+  });
+  function ptNombre(v) { var n = parseInt(String(v).replace(/\D/g, ''), 10); return n > 0 ? n : 0; }
+  function ptEsc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function ouvrirProtech() {
+    session.live = 'INVENTAIRE PROTECH';
+    ecrire('svl-code', session.code);
+    $('ecran-depart').hidden = true; $('ecran-protech').hidden = false;
+    $('pt-msg').textContent = ''; $('pt-total').textContent = '';
+    $('pt-valider').disabled = true;
+    $('pt-liste').innerHTML = '<div class="aide">Lecture de la liste des produits…</div>';
+    appeler('protechCatalogue').then(function (r) {
+      ptProduits = (r && r.produits) || [];
+      ptDernier = (r && r.dernier) || null;
+      if (!ptProduits.length) {
+        $('pt-liste').innerHTML = '<div class="aide">Aucun produit : remplis l\'onglet PROTECH CARTONS du Sheet (produit, pièces par carton).</div>';
+        return;
+      }
+      $('pt-aide').textContent = 'Compte les cartons pleins de chaque produit dans la réserve, puis enregistre.'
+        + (ptDernier ? ' Dernier inventaire : ' + ptDernier.date + ' à ' + String(ptDernier.heure).slice(0, 5) + '.' : '');
+      $('pt-liste').innerHTML = ptProduits.map(function (p, i) {
+        var der = ptDernier && ptDernier.cartons && ptDernier.cartons[p.produit] != null ? ptDernier.cartons[p.produit] : null;
+        return '<div class="pt-ligne" data-i="' + i + '">'
+          + '<div class="pt-nom">' + ptEsc(p.produit) + '</div>'
+          + '<div class="pt-det">' + (p.parCarton ? p.parCarton + ' pièces / carton' : '<span class="manque">pièces par carton à remplir dans le Sheet</span>')
+          + (der != null ? ' · dernier : ' + der : '') + '<span class="pt-pcs"></span></div>'
+          + '<div class="pt-cpt"><button type="button" class="moins" aria-label="Un carton de moins">−</button>'
+          + '<input type="text" inputmode="numeric" value="" placeholder="0" aria-label="Cartons ' + ptEsc(p.produit) + '">'
+          + '<button type="button" class="plus" aria-label="Un carton de plus">+</button></div></div>';
+      }).join('');
+      Array.prototype.forEach.call($('pt-liste').querySelectorAll('.pt-ligne'), function (l) {
+        var inp = l.querySelector('input');
+        l.querySelector('.moins').onclick = function () { inp.value = Math.max(0, ptNombre(inp.value) - 1) || ''; ptMaj(); };
+        l.querySelector('.plus').onclick = function () { inp.value = ptNombre(inp.value) + 1; ptMaj(); };
+        inp.oninput = function () { inp.value = String(inp.value).replace(/\D/g, ''); ptMaj(); };
+      });
+      ptMaj();
+      $('pt-valider').disabled = false;
+    }).catch(function (e) {
+      var msg = String(e && e.message || e);
+      $('pt-liste').innerHTML = '<div class="aide">' + ptEsc(msg.indexOf('CODE_INVALIDE') >= 0 ? 'Code d\'accès incorrect.' : 'Lecture impossible : ' + msg) + '</div>';
+    });
+  }
+  function ptMaj() {
+    var cartons = 0, pieces = 0;
+    Array.prototype.forEach.call($('pt-liste').querySelectorAll('.pt-ligne'), function (l) {
+      var p = ptProduits[+l.dataset.i], n = ptNombre(l.querySelector('input').value);
+      cartons += n; if (p.parCarton) pieces += n * p.parCarton;
+      l.classList.toggle('compte', n > 0);
+      l.querySelector('.pt-pcs').textContent = p.parCarton ? ' · ' + (n * p.parCarton).toLocaleString('fr-FR') + ' pièces' : '';
+    });
+    $('pt-total').innerHTML = '<strong>' + cartons + '</strong> carton' + (cartons > 1 ? 's' : '') + ' · ' + pieces.toLocaleString('fr-FR') + ' pièces';
+    $('pt-msg').textContent = '';
+  }
+  $('pt-valider').onclick = function () {
+    var lignes = [];
+    Array.prototype.forEach.call($('pt-liste').querySelectorAll('.pt-ligne'), function (l) {
+      lignes.push({ produit: ptProduits[+l.dataset.i].produit, cartons: ptNombre(l.querySelector('input').value) });
+    });
+    var total = lignes.reduce(function (s, x) { return s + x.cartons; }, 0);
+    if (!total && !confirm('Aucun carton compté. Enregistrer quand même un inventaire à zéro ?')) return;
+    $('pt-valider').disabled = true;
+    $('pt-msg').textContent = 'Enregistrement…';
+    appeler('protechInventaire', { lignes: lignes }).then(function (r) {
+      bip(880, 0.12);
+      $('pt-msg').textContent = 'Inventaire enregistré le ' + r.date + ' à ' + String(r.heure).slice(0, 5) + ' : '
+        + r.cartons + ' carton' + (r.cartons > 1 ? 's' : '') + ', ' + Number(r.pieces).toLocaleString('fr-FR') + ' pièces (onglet INVENTAIRE PROTECH).';
+    }).catch(function (e) {
+      $('pt-msg').textContent = 'Pas enregistré : ' + String(e && e.message || e);
+    }).then(function () { $('pt-valider').disabled = false; });
+  };
+  $('pt-retour').onclick = function () { $('ecran-protech').hidden = true; $('ecran-menu').hidden = false; };
 
   function ouvrirPrix() {
     session.live = 'PRIX'; lignes = []; file = []; vus = {}; compteur = 0; dernierTexte = '';
