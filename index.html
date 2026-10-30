@@ -234,6 +234,9 @@
   #pt-resume { position: sticky; bottom: 0; background: var(--fond); padding-top: 4px; }
   #pt-resume .principal { margin-top: 8px; }
   #pt-msg { min-height: 18px; }
+  #pt-recherche-boite { position: sticky; top: 0; z-index: 2; background: var(--fond); padding: 4px 0 8px; }
+  #pt-recherche { padding-right: 40px; }
+  #pt-effacer { position: absolute; right: 4px; top: 8px; width: 36px; height: 36px; padding: 0; border: 0; background: transparent; font-size: 20px; color: var(--doux); }
 </style>
 </head>
 <body>
@@ -316,7 +319,12 @@
 <section id="ecran-protech" hidden>
   <div class="entete"><b>Inventaire ProTech</b><span class="compteur" id="pt-total"></span></div>
   <p class="aide" id="pt-aide">Compte les cartons pleins de chaque produit dans la réserve, puis enregistre.</p>
+  <div id="pt-recherche-boite">
+    <input id="pt-recherche" type="text" enterkeyhint="search" placeholder="Rechercher un produit (ex. ETB, classeur rose, sleeves)" autocomplete="off" aria-label="Rechercher un produit">
+    <button type="button" id="pt-effacer" aria-label="Effacer la recherche" hidden>×</button>
+  </div>
   <div id="pt-liste"><div class="aide">Lecture de la liste des produits…</div></div>
+  <p class="aide" id="pt-rien" hidden>Aucun produit ne correspond à la recherche.</p>
   <div id="pt-resume">
     <button class="principal" id="pt-valider" disabled>Enregistrer l'inventaire</button>
     <p class="aide" id="pt-msg"></p>
@@ -1698,6 +1706,7 @@
     $('ecran-depart').hidden = true; $('ecran-protech').hidden = false;
     $('pt-msg').textContent = ''; $('pt-total').textContent = '';
     $('pt-valider').disabled = true;
+    $('pt-recherche').value = ''; $('pt-effacer').hidden = true; $('pt-rien').hidden = true;
     $('pt-liste').innerHTML = '<div class="aide">Lecture de la liste des produits…</div>';
     appeler('protechCatalogue').then(function (r) {
       ptProduits = (r && r.produits) || [];
@@ -1759,6 +1768,21 @@
       $('pt-msg').textContent = 'Pas enregistré : ' + String(e && e.message || e);
     }).then(function () { $('pt-valider').disabled = false; });
   };
+  // Recherche : chaque mot tapé doit apparaître dans le nom du produit (sans tenir compte des accents ni des majuscules).
+  // Les produits masqués gardent leur nombre de cartons et restent dans l'inventaire enregistré.
+  function ptSans(t) { return String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+  function ptFiltrer() {
+    var mots = ptSans($('pt-recherche').value).split(/\s+/).filter(Boolean), vus = 0;
+    Array.prototype.forEach.call($('pt-liste').querySelectorAll('.pt-ligne'), function (l) {
+      var nom = ptSans(ptProduits[+l.dataset.i].produit);
+      var ok = mots.every(function (m) { return nom.indexOf(m) >= 0; });
+      l.hidden = !ok; if (ok) vus++;
+    });
+    $('pt-effacer').hidden = !mots.length;
+    $('pt-rien').hidden = !(mots.length && ptProduits.length && !vus);
+  }
+  $('pt-recherche').oninput = ptFiltrer;
+  $('pt-effacer').onclick = function () { $('pt-recherche').value = ''; ptFiltrer(); $('pt-recherche').focus(); };
   $('pt-retour').onclick = function () { $('ecran-protech').hidden = true; $('ecran-menu').hidden = false; };
 
   function ouvrirPrix() {
