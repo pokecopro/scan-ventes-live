@@ -230,6 +230,7 @@
   .pt-nom { grid-column: 2; font-weight: 600; font-size: 14px; min-width: 0; }
   .pt-det { grid-column: 2; font-size: 12px; color: var(--doux); font-variant-numeric: tabular-nums; }
   .pt-det .manque { color: var(--erreur); }
+  .pt-stock { color: var(--texte); font-weight: 600; }
   .pt-cpt { grid-row: 1 / span 2; grid-column: 3; display: flex; align-items: center; gap: 6px; }
   .pt-cpt button { width: 42px; height: 42px; padding: 0; font-size: 22px; line-height: 1; }
   .pt-cpt input { width: 62px; text-align: center; padding: 9px 4px; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -1696,7 +1697,7 @@
   };
 
   // ---- Inventaire ProTech : nombre de cartons pleins par produit (onglets PROTECH CARTONS / INVENTAIRE PROTECH) ----
-  var ptProduits = [], ptDernier = null;
+  var ptProduits = [], ptDernier = null, ptStock = null;
   Array.prototype.forEach.call(document.querySelectorAll('#choix-inv button'), function (b) {
     b.onclick = function () { if (b.dataset.inv === 'protech') ouvrirProtech(); };
   });
@@ -1713,19 +1714,25 @@
     appeler('protechCatalogue').then(function (r) {
       ptProduits = (r && r.produits) || [];
       ptDernier = (r && r.dernier) || null;
+      ptStock = (r && r.stock) || null;
       if (!ptProduits.length) {
         $('pt-liste').innerHTML = '<div class="aide">Aucun produit : remplis l\'onglet PROTECH CARTONS du Sheet (produit, pièces par carton).</div>';
         return;
       }
       $('pt-aide').textContent = 'Compte les cartons pleins de chaque produit dans la réserve, puis enregistre.'
-        + (ptDernier ? ' Dernier inventaire : ' + ptDernier.date + ' à ' + String(ptDernier.heure).slice(0, 5) + '.' : '');
+        + (ptDernier ? ' Dernier inventaire : ' + ptDernier.date + ' à ' + String(ptDernier.heure).slice(0, 5) + '.' : '')
+        + (ptStock && /^Inventaire du/.test(ptStock.info) ? ' Stock à jour chaque nuit (' + ptStock.info + ').' : '');
       $('pt-liste').innerHTML = ptProduits.map(function (p, i) {
         var der = ptDernier && ptDernier.cartons && ptDernier.cartons[p.produit] != null ? ptDernier.cartons[p.produit] : null;
+        var st = ptStock && ptStock.produits ? ptStock.produits[p.produit] : null;
         return '<div class="pt-ligne" data-i="' + i + '">'
           + (p.photo ? '<img class="pt-photo" loading="lazy" alt="" src="' + ptEsc(p.photo) + '">' : '<div class="pt-photo"></div>')
           + '<div class="pt-nom">' + ptEsc(p.produit) + '</div>'
           + '<div class="pt-det">' + (p.parCarton ? p.parCarton + ' pièces / carton' : '<span class="manque">pièces par carton à remplir dans le Sheet</span>')
-          + (der != null ? ' · dernier : ' + der : '') + '<span class="pt-pcs"></span></div>'
+          + (der != null ? ' · dernier : ' + der : '') + '<span class="pt-pcs"></span>'
+          + (st && st.reste !== '' ? '<br><span class="pt-stock">Stock actuel : ' + ptEsc(st.reste) + ' pièces'
+            + (st.cartons !== '' ? ' (≈ ' + ptEsc(st.cartons) + ' carton' + (parseFloat(String(st.cartons).replace(',', '.')) >= 2 ? 's' : '') + ')' : '') + '</span>' : '')
+          + '</div>'
           + '<div class="pt-cpt"><button type="button" class="moins" aria-label="Un carton de moins">−</button>'
           + '<input type="text" inputmode="numeric" value="" placeholder="0" aria-label="Cartons ' + ptEsc(p.produit) + '">'
           + '<button type="button" class="plus" aria-label="Un carton de plus">+</button></div></div>';
